@@ -1,0 +1,35 @@
+services:
+    kontrol-isp-app:
+        container_name: kontrol-isp-app
+        image: kontrol-isp:${PROD_DEPLOY_TAG}
+        read_only: true
+        tmpfs:
+            - /tmp
+            - /app/.next/cache
+        security_opt:
+            - "no-new-privileges:true"
+        expose:
+            - "${PORT}"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.kontrol.rule=Host(`${APP_SUBDOMAIN}`)"
+            - "traefik.http.routers.kontrol.entrypoints=websecure"
+            - "traefik.http.routers.kontrol.tls.certresolver=letsencrypt"
+            - "traefik.http.services.kontrol.loadbalancer.server.port=${PORT}"
+        environment:
+            - HOSTNAME=0.0.0.0
+        env_file:
+            - .env
+        healthcheck:
+            # Cambiamos a una petición GET real (quitamos --spider)
+            # Auth.js no soporta HEAD (UnknownAction), por eso fallaba.
+            test: ["CMD", "wget", "--no-verbose", "--tries=1", "--output-document=-", "http://127.0.0.1:${PORT}/api/auth/providers"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 20s
+        networks:
+            - serkoi_network
+networks:
+    serkoi_network:
+        external: true

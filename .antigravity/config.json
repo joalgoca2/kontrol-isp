@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "project": {
+    "framework": "nextjs",
+    "architecture": "app-router",
+    "environment": "docker-compose",
+    "ui_library": "tailwind-css"
+  },
+  "agent": {
+    "mode": "planning",
+    "planning_enabled": true,
+    "require_user_approval": true,
+    "skills": [
+      "nextjs-best-practices",
+      "typescript-strict-typing",
+      "docker-container-orchestration"
+    ],
+    "allowed_commands": [
+      "docker compose up -d",
+      "docker compose down",
+      "docker compose logs *",
+      "docker compose exec *",
+      "docker exec -it *",
+      "docker compose exec -T web npm run lint",
+      "docker compose exec -T web npm run build"
+    ]
+  },
+  "rules": {
+    "modification_policy": "preserve_existing_code",
+    "react_components": "use_server_components_by_default",
+    "state_management": "use_client_only_when_needed",
+    "data_fetching": "async_await_in_server_components",
+    "styling": "atomic_tailwind_classes"
+  }
+}

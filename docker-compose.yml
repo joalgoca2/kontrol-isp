@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: ./services/app
+      dockerfile: Dockerfile
+      target: deps
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_URL=${AUTH_URL}
+      - AUTH_TRUST_HOST=${AUTH_TRUST_HOST:-true}
+      - EMAIL_SERVER_HOST=${EMAIL_SERVER_HOST}
+      - EMAIL_SERVER_PORT=${EMAIL_SERVER_PORT}
+      - EMAIL_SERVER_USER=${EMAIL_SERVER_USER}
+      - EMAIL_SERVER_PASSWORD=${EMAIL_SERVER_PASSWORD}
+      - EMAIL_FROM=${EMAIL_FROM}
+      - NEXT_PUBLIC_APP_VERSION=${PROD_DEPLOY_TAG}
+      - NEXT_PUBLIC_ENABLE_PWA=${NEXT_PUBLIC_ENABLE_PWA}
+      - NEXT_PUBLIC_ENABLE_WALKTHROUGH=${NEXT_PUBLIC_ENABLE_WALKTHROUGH}
+      - NEXT_PUBLIC_ENABLE_SCREEN_LOCK=${NEXT_PUBLIC_ENABLE_SCREEN_LOCK}
+      - NEXT_PUBLIC_ENABLE_AI_CHAT=${NEXT_PUBLIC_ENABLE_AI_CHAT}
+      - AI_PROVIDER=${AI_PROVIDER}
+      - AI_API_KEY=${AI_API_KEY}
+      - ISP_AI_PROVIDER=${ISP_AI_PROVIDER}
+      - ISP_AI_API_KEY=${ISP_AI_API_KEY}
+      - ISP_AI_MODEL=${ISP_AI_MODEL}
+      - ISP_AI_HISTORY_LIMIT=${ISP_AI_HISTORY_LIMIT}
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY}
+    networks:
+      - rm_monkeycore_network
+
+networks:
+  rm_monkeycore_network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-rm_monkeycore_network}

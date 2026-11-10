@@ -1,0 +1,698 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- AUTHENTICATION & USERS ---
+
+model User {
+  id                 String         @id @default(cuid())
+  name               String?
+  email              String         @unique
+  emailVerified      DateTime?
+  image              String?
+  password           String?
+  isActive           Boolean        @default(true)
+  bio                String?        @db.Text
+  locale             String         @default("es")
+  timezone           String         @default("America/Bogota")
+
+  showWalkthrough    Boolean        @default(true)
+  walkthroughStep    Int            @default(0)
+  walkthroughDoneAt  DateTime?
+  securityPin        String?
+  webauthnCredential String?        @db.Text
+
+  brandId            String?
+  brand              Brand?         @relation(fields: [brandId], references: [id], onDelete: SetNull)
+
+  accounts           Account[]
+  sessions           Session[]
+  roles              UserRole[]
+  loginHistory       LoginHistory[]
+  notifications      Notification[]
+  assignedTickets    SupportTicket[] @relation("AssignedTickets")
+
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([brandId])
+  @@map("users")
+}
+
+// --- NEXTAUTH MODELS ---
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// --- ROLE-BASED ACCESS CONTROL (RBAC) ---
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  users       UserRole[]
+  permissions RolePermission[]
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  roles       RolePermission[]
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("users_roles")
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("roles_permissions")
+}
+
+// --- AUDIT & SECURITY ---
+
+model LoginHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  ip        String?
+  userAgent String?  @db.Text
+  device    String?
+  browser   String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("login_history")
+}
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  points    Int      @default(0)
+  expireAt  DateTime @map("expire_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("rate_limits")
+}
+
+// --- NOTIFICATIONS ---
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  desc      String
+  type      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+// --- MULTI-TENANT: BRANDS ---
+
+model Brand {
+  id                String               @id @default(cuid())
+  name              String
+  slug              String               @unique
+  legalName         String?
+  taxId             String?
+  logo              String?
+  apiKey            String?              @unique
+  isActive          Boolean              @default(true)
+
+  locale            String               @default("es")
+  timezone          String               @default("America/Bogota")
+  currency          String               @default("COP")
+
+  billingWebhookUrl String?
+  generalWebhookUrl String?
+
+  users             User[]
+  mikrotikNodes     MikrotikNode[]
+  clients           Client[]
+  contracts         Contract[]
+  plans             Plan[]
+  payments          Payment[]
+  supportTickets    SupportTicket[]
+  whatsappConfigs   WhatsappConfig[]
+  aiConversations   AiConversationLog[]
+  aiConfig          BrandAiConfig?
+  paymentGateways   PaymentGatewayConfig[]
+
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@map("brands")
+}
+
+// --- ENUMS ---
+
+enum DocumentType {
+  CC
+  NIT
+  CE
+  PASAPORTE
+}
+
+enum TechnologyType {
+  FIBRA_OPTICA
+  MICROONDAS
+}
+
+enum BillingStatus {
+  ACTIVO
+  AVISO_VENCIMIENTO
+  SUSPENDIDO_MORA
+  RETIRADO
+  CORTESIA
+}
+
+enum ServiceStatus {
+  ONLINE
+  OFFLINE
+  DESCONOCIDO
+}
+
+enum NodeStatus {
+  ONLINE
+  OFFLINE
+  WARNING
+  UNREACHABLE
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  EFECTY
+  NEQUI
+  DAVIPLATA
+  BANCOLOMBIA
+  PAYU
+  DAVIPAY
+  OTRO
+}
+
+enum GatewayProvider {
+  DAVIPAY
+  EFECTY
+}
+
+enum PaymentStatus {
+  APROBADO
+  PENDIENTE
+  RECHAZADO
+  ANULADO
+}
+
+enum TicketChannel {
+  WHATSAPP_AI
+  TELEFONO
+  PORTAL
+  PRESENCIAL
+}
+
+enum IssueType {
+  CORTE_TOTAL
+  LENTITUD
+  CAMBIO_WIFI
+  FALLA_FISICA_LOS
+  CARTERA
+  OTRO
+}
+
+enum TicketPriority {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum TicketStatus {
+  ABIERTO
+  EN_DIAGNOSTICO_IA
+  TRANSFERIDO_HUMANO
+  VISITA_AGENDADA
+  RESUELTO
+  CERRADO
+}
+
+enum VisitStatus {
+  AGENDADA
+  EN_RUTA
+  COMPLETADA
+  CANCELADA
+}
+
+// --- MIKROTIK MULTI-NODO POR MARCA ---
+
+model MikrotikNode {
+  id                String       @id @default(cuid())
+  brandId           String
+  brand             Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  name              String
+  code              String
+  location          String
+  host              String
+  port              Int          @default(8728)
+  username          String
+  passwordEncrypted String
+  fallbackHost      String?
+  useTls            Boolean      @default(false)
+  isActive          Boolean      @default(true)
+
+  status            NodeStatus   @default(OFFLINE)
+  lastCheckAt       DateTime?
+  latencyMs         Int?
+  activeSessions    Int          @default(0)
+  cpuUsage          Int?
+  routerOsVersion   String?
+
+  contracts         Contract[]
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([brandId, code])
+  @@index([brandId])
+  @@map("mikrotik_nodes")
+}
+
+// --- CLIENTES / TITULARES ---
+
+model Client {
+  id             String       @id @default(cuid())
+  brandId        String
+  brand          Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  clientCode     String?      @map("client_code")
+  documentType   DocumentType @default(CC)
+  documentNumber String
+  fullName       String
+  email          String?
+  phonePrimary   String
+  phoneSecondary String?
+  address        String?
+  city           String       @default("Soacha")
+  department     String       @default("Cundinamarca")
+  notes          String?      @db.Text
+  isActive       Boolean      @default(true)
+
+  contracts      Contract[]
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([brandId, documentNumber])
+  @@index([brandId])
+  @@index([brandId, clientCode])
+  @@map("clients")
+}
+
+// --- CONTRATOS / SERVICIOS (1 A N POR CLIENTE) ---
+
+model Contract {
+  id                 String              @id @default(cuid())
+  brandId            String
+  brand              Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  clientId           String
+  client             Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  contractNumber     String
+  contractDate       DateTime            @default(now())
+
+  address            String
+  neighborhood       String?
+  city               String              @default("Soacha")
+  department         String              @default("Cundinamarca")
+  latitude           Float?
+  longitude          Float?
+
+  nodeId             String
+  node               MikrotikNode        @relation(fields: [nodeId], references: [id])
+
+  planId             String
+  plan               Plan                @relation(fields: [planId], references: [id])
+
+  technology         TechnologyType      @default(FIBRA_OPTICA)
+  pppoeUser          String
+  pppoePassword      String?
+  ipAddress          String?
+  macAddress         String?
+
+  billingStatus      BillingStatus       @default(ACTIVO)
+  serviceStatus      ServiceStatus       @default(DESCONOCIDO)
+
+  equipment          ContractEquipment?
+  payments           Payment[]
+  tickets            SupportTicket[]
+  aiConversations    AiConversationLog[]
+
+  createdBy          String?
+  updatedBy          String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([brandId, contractNumber])
+  @@unique([brandId, pppoeUser])
+  @@index([brandId])
+  @@index([clientId])
+  @@index([nodeId])
+  @@map("contracts")
+}
+
+// --- EQUIPOS / INVENTARIO POR CONTRATO ---
+
+model ContractEquipment {
+  id               String   @id @default(cuid())
+  contractId       String   @unique
+  contract         Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  routerBrand      String?
+  routerModel      String?
+  routerMac        String?
+  routerSerial     String?
+
+  antennaType      String?
+  antennaMac       String?
+  antennaIp        String?
+  cableMeters      Int      @default(0)
+
+  opticalPowerRx   Float?
+  onuTemperature   Float?
+  fiberPort        String?
+
+  notes            String?  @db.Text
+  installationDate DateTime @default(now())
+
+  @@map("contract_equipment")
+}
+
+// --- PLANES DE VELOCIDAD POR MARCA ---
+
+model Plan {
+  id                String         @id @default(cuid())
+  brandId           String
+  brand             Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  name              String
+  downloadSpeedMbps Int
+  uploadSpeedMbps   Int
+  rateLimit         String
+  priceCop          Float
+  billingDay        Int            @default(10)
+  mikrotikProfile   String?
+  technology        TechnologyType @default(FIBRA_OPTICA)
+  isActive          Boolean        @default(true)
+
+  contracts         Contract[]
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([brandId, name])
+  @@index([brandId])
+  @@map("plans")
+}
+
+// --- FACTURACIÓN Y PAGOS ---
+
+model Payment {
+  id                String        @id @default(cuid())
+  brandId           String
+  brand             Brand         @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  contractId        String
+  contract          Contract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  receiptNumber     Int           @default(autoincrement())
+  invoiceNumber     String?
+  periodBilled      String
+  amount            Float
+  paymentMethod     PaymentMethod @default(EFECTIVO)
+  externalReference String?
+  recordedByUserId  String
+  status            PaymentStatus @default(APROBADO)
+  notes             String?
+
+  createdBy         String?
+  updatedBy         String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @default(now()) @updatedAt
+
+  @@index([brandId])
+  @@index([contractId])
+  @@map("payments")
+}
+
+// --- MESA DE AYUDA Y TICKETS ---
+
+model SupportTicket {
+  id                 String            @id @default(cuid())
+  brandId            String
+  brand              Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  contractId         String
+  contract           Contract          @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  ticketNumber       String            @unique
+  channel            TicketChannel     @default(WHATSAPP_AI)
+  issueType          IssueType
+  priority           TicketPriority    @default(MEDIA)
+  status             TicketStatus      @default(ABIERTO)
+
+  description        String            @db.Text
+  diagnosticSnapshot Json?
+  assignedUserId     String?
+  assignedUser       User?             @relation("AssignedTickets", fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  technicianVisits   TechnicianVisit[]
+  createdBy          String?
+  updatedBy          String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([brandId])
+  @@index([contractId])
+  @@map("support_tickets")
+}
+
+model TechnicianVisit {
+  id             String        @id @default(cuid())
+  ticketId       String
+  ticket         SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  scheduledDate  DateTime
+  technicianName String
+  status         VisitStatus   @default(AGENDADA)
+  notes          String?       @db.Text
+
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("technician_visits")
+}
+
+// --- WHATSAPP CONFIG (POR MARCA) ---
+
+model WhatsappConfig {
+  id               String   @id @default(cuid())
+  brandId          String
+  brand            Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  provider         String   @default("EVOLUTION")
+
+  // Evolution API
+  instanceName     String   @default("serkoi-telecom") @map("instance_name")
+  evolutionToken   String?  @map("evolution_token")
+
+  // WhatsApp Cloud API (Meta Oficial)
+  metaPhoneNumberId      String? @map("meta_phone_number_id")
+  metaWabaId             String? @map("meta_waba_id")
+  metaAccessToken        String? @db.Text @map("meta_access_token")
+  metaWebhookVerifyToken String? @map("meta_webhook_verify_token")
+  metaAppSecret          String? @map("meta_app_secret")
+
+  phoneNumber      String?  @map("phone_number")
+  connectionStatus String   @default("close") @map("connection_status")
+  qrCode           String?  @db.Text @map("qr_code")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([brandId])
+  @@map("whatsapp_config")
+}
+
+// --- AUDITORÍA DE CONVERSACIONES IA ---
+
+model AiConversationLog {
+  id                 String    @id @default(cuid())
+  brandId            String
+  brand              Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  contractId         String?
+  contract           Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  channel            String    @default("WHATSAPP")
+  senderIdentifier   String
+  userMessage        String    @db.Text
+  aiResponse         String    @db.Text
+  toolsInvoked       Json?
+  transferredToHuman Boolean   @default(false)
+  tokensUsed         Int?
+
+  createdAt          DateTime  @default(now())
+
+  @@index([brandId])
+  @@index([senderIdentifier])
+  @@map("ai_conversation_logs")
+}
+
+// --- CONFIGURACIÓN DE AGENTE IA POR MARCA ---
+
+model BrandAiConfig {
+  id                  String   @id @default(cuid())
+  brandId             String   @unique @map("brand_id")
+  brand               Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  templateType        String   @default("BAILEYS_AI") @map("template_type")
+  botName             String   @default("SerkoiBot") @map("bot_name")
+  tone                String   @default("AMABLE")
+  systemPrompt        String?  @db.Text @map("system_prompt")
+  flowConfig          Json?    @map("flow_config")
+
+  allowDiagnosticMikrotik Boolean  @default(true) @map("allow_diagnostic_mikrotik")
+  allowKickSession    Boolean  @default(true) @map("allow_kick_session")
+  allowGracePromise   Boolean  @default(true) @map("allow_grace_promise")
+  graceHours          Int      @default(24) @map("grace_hours")
+  allowScheduleVisits Boolean  @default(true) @map("allow_schedule_visits")
+  morningVisitSlots   Int      @default(4) @map("morning_visit_slots")
+  afternoonVisitSlots Int      @default(4) @map("afternoon_visit_slots")
+  allowBillingBalance Boolean  @default(true) @map("allow_billing_balance")
+  allowTransferHuman  Boolean  @default(true) @map("allow_transfer_human")
+  allowCheckVisits    Boolean  @default(true) @map("allow_check_visits")
+
+  createdBy           String?  @map("created_by")
+  updatedBy           String?  @map("updated_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("brand_ai_configs")
+}
+
+// --- PASARELAS DE PAGO Y RECAUDO (COLOMBIA) ---
+
+model PaymentGatewayConfig {
+  id              String          @id @default(cuid())
+  brandId         String          @map("brand_id")
+  brand           Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  provider        GatewayProvider
+  isEnabled       Boolean         @default(false) @map("is_enabled")
+  isTestMode      Boolean         @default(true) @map("is_test_mode")
+
+  // DaviPay / ePayco
+  customerId      String?         @map("customer_id")
+  publicKey       String?         @map("public_key")
+  privateKey      String?         @map("private_key")
+  pKey            String?         @map("p_key")
+
+  // Efecty
+  agreementCode   String?         @map("agreement_code")
+  secretKey       String?         @map("secret_key")
+  validationMode  String          @default("DOCUMENT") @map("validation_mode")
+
+  createdBy       String?         @map("created_by")
+  updatedBy       String?         @map("updated_by")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  @@unique([brandId, provider])
+  @@index([brandId])
+  @@index([agreementCode])
+  @@index([customerId])
+  @@map("payment_gateway_configs")
+}

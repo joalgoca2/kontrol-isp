@@ -1,0 +1,59 @@
+# dependencies
+npm_debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+node_modules
+services/app/node_modules
+services/app/.next
+packages/*/node_modules
+
+# next.js
+.next/
+out/
+
+# production
+build/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+/secrets/db-password.txt
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Docker
+.docker
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/
+.fleet/
+.zed/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Deployment Images
+.prod_environment/.image/
+.prod_environment/.env.production

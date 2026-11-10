@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentación Oficial | Kontrol ISP & Serkoi SAS</title>
+
+  <!-- Tailwind CSS & Typography Plugin -->
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+
+  <!-- Markdown Parser (Marked.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Syntax Highlighting (Highlight.js) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(150, 150, 150, 0.3);
+      border-radius: 9999px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(150, 150, 150, 0.5);
+    }
+
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+
+      body {
+        background: white !important;
+        color: black !important;
+      }
+
+      #contentArea {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+    }
+
+    /* Code copy button container */
+    pre {
+      position: relative;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.7rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: #94a3b8;
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.375rem;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s, background-color 0.2s;
+    }
+
+    pre:hover .copy-btn {
+      opacity: 1;
+    }
+
+    .copy-btn:hover {
+      background: rgba(51, 65, 85, 0.9);
+      color: #ffffff;
+    }
+  </style>
+</head>
+
+<body class="bg-zinc-50 dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 antialiased min-h-screen flex flex-col">
+
+  <!-- Mobile Overlay -->
+  <div id="mobileOverlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden"></div>
+
+  <!-- Main Container -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Sidebar Navigation -->
+    <aside id="sidebar"
+      class="fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col transition-transform duration-300 transform -translate-x-full md:translate-x-0 md:static md:inset-auto">
+
+      <!-- Sidebar Header -->
+      <div class="h-16 px-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+        <a href="#inversion.md" class="flex items-center gap-2.5">
+          <div
+            class="h-8 w-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white font-black text-base shadow-sm">
+            K
+          </div>
+          <div>
+            <span class="font-extrabold text-sm tracking-tight text-zinc-900 dark:text-white flex items-center gap-1.5">
+              Kontrol ISP
+              <span
+                class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">Docs</span>
+            </span>
+            <p class="text-[10px] text-zinc-500">Documentación Técnica</p>
+          </div>
+        </a>
+        <button id="closeSidebarBtn"
+          class="md:hidden p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Quick Search in Documents -->
+      <div class="p-3 border-b border-zinc-100 dark:border-zinc-800/80">
+        <div class="relative">
+          <svg class="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" fill="none" stroke="currentColor"
+            viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          <input type="text" id="docFilterInput" placeholder="Filtrar documentos..."
+            class="w-full pl-9 pr-3 py-1.5 text-xs bg-zinc-100 dark:bg-zinc-800/80 border border-transparent rounded-xl focus:outline-hidden focus:border-emerald-500 text-zinc-800 dark:text-zinc-200">
+        </div>
+      </div>
+
+      <!-- Navigation Tree -->
+      <nav id="docNavList" class="flex-1 overflow-y-auto p-3 space-y-6">
+
+        <!-- Section: Estrategia & ROI -->
+        <div class="space-y-1">
+          <span class="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Estrategia
+            & Finanzas</span>
+          <a href="#inversion.md" data-file="inversion.md"
+            class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+              </path>
+            </svg>
+            <span class="truncate">Informe de Inversión & IA</span>
+          </a>
+        </div>
+
+        <!-- Section: APIs & Integraciones -->
+        <div class="space-y-1">
+          <span class="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">APIs &
+            Integraciones (n8n)</span>
+          <a href="#api-cliente.md" data-file="api-cliente.md"
+            class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <svg class="w-4 h-4 text-cyan-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+            </svg>
+            <span class="truncate">API Cliente & Servicios</span>
+          </a>
+          <a href="#api-diagnostico.md" data-file="api-diagnostico.md"
+            class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z">
+              </path>
+            </svg>
+            <span class="truncate">API Diagnóstico MikroTik</span>
+          </a>
+        </div>
+
+        <!-- Section: Core & Arquitectura -->
+        <div class="space-y-1">
+          <span
+            class="px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Arquitectura
+            Técnica</span>
+          <a href="#arquitectura.md" data-file="arquitectura.md"
+            class="nav-item flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+            <svg class="w-4 h-4 text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+              </path>
+            </svg>
+            <span class="truncate">Arquitectura Kontrol ISP</span>
+          </a>
+        </div>
+
+      </nav>
+
+      <!-- Sidebar Footer -->
+      <div
+        class="p-3 border-t border-zinc-200 dark:border-zinc-800 text-[11px] text-zinc-500 flex items-center justify-between">
+        <span class="font-mono">v1.2 &bull; Prod</span>
+        <a href="/dashboard"
+          class="text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 font-semibold">
+          Ir a App &rarr;
+        </a>
+      </div>
+
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-screen overflow-y-auto">
+
+      <!-- Header Top Bar -->
+      <header
+        class="sticky top-0 z-30 h-16 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 px-4 sm:px-6 flex items-center justify-between">
+
+        <div class="flex items-center gap-3">
+          <!-- Mobile Menu Hamburger -->
+          <button id="openSidebarBtn"
+            class="md:hidden p-2 rounded-xl text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </button>
+
+          <!-- Breadcrumb Title -->
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-zinc-400">Docs</span>
+            <span class="text-zinc-300 dark:text-zinc-700">/</span>
+            <span id="activeDocTitle" class="font-bold text-zinc-800 dark:text-zinc-200">Cargando...</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 no-print">
+          <button onclick="window.print()" title="Exportar a PDF / Imprimir"
+            class="p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z">
+              </path>
+            </svg>
+          </button>
+
+          <button id="themeToggle" title="Alternar Modo Oscuro/Claro"
+            class="p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 transition-colors">
+            <svg id="themeIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+            </svg>
+          </button>
+        </div>
+
+      </header>
+
+      <!-- Document Content Body -->
+      <main class="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-8 sm:py-12">
+
+        <!-- Loading State -->
+        <div id="loadingSpinner" class="flex flex-col items-center justify-center py-24 space-y-3">
+          <div class="w-8 h-8 border-3 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin"></div>
+          <span class="text-xs text-zinc-400 font-medium font-mono">Cargando documento...</span>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorCard"
+          class="hidden p-6 rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-800/40 text-rose-800 dark:text-rose-300 space-y-3">
+          <div class="flex items-center gap-2 font-bold text-sm">
+            <svg class="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+              </path>
+            </svg>
+            No se pudo cargar el documento
+          </div>
+          <p id="errorMessage" class="text-xs text-rose-700 dark:text-rose-400"></p>
+          <button onclick="loadDocument(currentDocFile)"
+            class="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700">Reintentar</button>
+        </div>
+
+        <!-- Rendered Markdown Container -->
+        <article id="markdownContainer" class="hidden prose prose-zinc dark:prose-invert max-w-none 
+          prose-headings:font-black prose-headings:tracking-tight 
+          prose-h1:text-2xl sm:prose-h1:text-4xl prose-h1:border-b prose-h1:border-zinc-200 dark:prose-h1:border-zinc-800 prose-h1:pb-4
+          prose-h2:text-xl sm:prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-3
+          prose-h3:text-lg prose-h3:mt-6
+          prose-table:text-xs prose-th:bg-zinc-100 dark:prose-th:bg-zinc-800/60 prose-th:p-3 prose-td:p-3
+          prose-a:text-emerald-600 dark:prose-a:text-emerald-400 prose-a:no-underline hover:prose-a:underline
+          prose-code:text-emerald-600 dark:prose-code:text-emerald-400 prose-code:font-mono prose-code:text-[13px]
+          prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-zinc-800 prose-pre:rounded-2xl">
+        </article>
+
+      </main>
+
+    </div>
+
+  </div>
+
+  <!-- EMBEDDED MARKDOWN REPOSITORY (Dual file:// and http:// support) -->
+  <script type="text/markdown" id="doc-inversion.md">
+# Informe Ejecutivo: Estrategia de Desarrollo en 2 Fases con IA
+**Plataforma Kontrol ISP & Serkoi SAS**  
+*Fecha de corte: Noviembre 2026 | Estado: Productivo*
+
+---
+
+## 1. Resumen Ejecutivo
+
+Este documento presenta el análisis técnico y financiero del ciclo de vida del software desarrollado para **Kontrol ISP**, diferenciando con total claridad las dos fases del proyecto:
+1. **Fase 1 (Cimientos con IA - 480 Horas)**: Investigación, descarte y maduración de la **Base Ideal de Trabajo** (arquitectura empresarial multi-tenant, Next.js 16, Docker, Prisma, Auth/RBAC, i18n y estándares de tipado estricto).
+2. **Fase 2 (Ejecución con Antigravity - 25 Horas)**: Implementación vertical de la **Lógica de Negocio SID** (migración de 2,575 contratos desde MariaDB, telemetría MikroTik en vivo, geocodificación y NOC con clustering de mapas).
+
+El factor de aceleración obtenido en la Fase 2 gracias a la base preexistente fue de **9.6x**, reduciendo un desarrollo estimado de 240 horas manuales a tan solo **25 horas netas (1,500 minutos)**.
+
+---
+
+## 2. Indicadores Clave de Rendimiento (KPIs)
+
+| Métrica | Valor | Descripción |
+|---|---|---|
+| **Fase 1: Base Ideal (I+D IA)** | **480 horas** | ~3 meses de investigación iterativa con IA para perfeccionar la arquitectura base reutilizable. |
+| **Fase 2: Lógica SID (Antigravity)** | **25 horas** | Tiempo neto para migrar la base productiva e integrar hardware MikroTik y NOC cartográfico. |
+| **Ahorro en Fase de Negocio** | **89.6%** | Reducción de 240 horas estimadas tradicionalmente a 25 horas asistidas por IA. |
+| **Volumen Productivo SID** | **2,575 contratos** | 2,352 abonados y 2,575 enlaces operativos, geolocalizados y conectados a RouterOS. |
+
+---
+
+## 3. El Efecto Multiplicador de la Base de Trabajo
+
+### Comparativa Visual de Tiempos
+```
+Fase 1: I+D Base Ideal (con IA)           [████████████████████████████████████████] 480 hrs (~3 meses)
+Fase 2: Estimada a mano (sin IA)         [████████████████████                    ] 240 hrs (~1.5 meses)
+Fase 2: Real con Antigravity sobre Base  [██                                      ]  25 hrs (3 días)
+```
+
+> **Hallazgo de Ingeniería:**  
+> La inversión previa en madurar la base de trabajo (Fase 1) fue el catalizador fundamental. Al no tener que reinventar componentes de interfaz, validaciones Zod, middlewares de autenticación ni estructuras de microservicios, el agente de IA operó directamente sobre reglas claras, comprimiendo la entrega de negocio en un **89.6% de ahorro temporal**.
+
+---
+
+## 4. Las 7 Tareas de Lógica de Negocio SID (25 Horas / 1,500 Minutos)
+
+Todas las tareas fueron implementadas con TypeScript estricto, 0 tipos `any`, líneas menores a 100 caracteres y validación Zod dual.
+
+### Hito 1: Arquitectura Multi-Tenant & Multi-Brand (180 min / 3.0 hrs)
+- **Área**: Arquitectura & Core
+- **Alcance**: Adaptación del proyecto base para admitir múltiples empresas ISP simultáneas. Aislamiento de datos por `brandId`, contexto de marca en React (`useBrand`), navegación contextual y soporte prioritario para **Serkoi SAS**.
+- **Resultados**: Resolución de marcas por sesión de usuario y RBAC; filtros globales en Server Actions de Prisma.
+
+### Hito 2: Migración ETL MariaDB &rarr; PostgreSQL (270 min / 4.5 hrs)
+- **Área**: Base de Datos & Data Pipeline
+- **Alcance**: Extracción, transformación y carga (ETL) de la base de datos productiva de Serkoi desde MariaDB hacia PostgreSQL (`kontrol_db`). Sincronización y normalización de contratos y abonados.
+- **Resultados**: 
+  - **2,352 abonados/clientes** normalizados con documento, teléfono y dirección.
+  - **2,575 contratos & enlaces** con credenciales PPPoE y estados de servicio.
+  - Tablas: `clients`, `contracts`, `contract_equipments`, `plans`.
+
+### Hito 3: Gestión de Contratos & Equipos CPE en Sitio (240 min / 4.0 hrs)
+- **Área**: Gestión Operativa SID
+- **Alcance**: Reestructuración del módulo de contratos para reflejar la operación real de un ISP en campo:
+  - Nomenclatura limpia de planes (decodificación de cadenas complejas como `PLAN|2M/4M|Fidelizacion|40000|10`).
+  - **Titular Fijo y Protegido**: Al editar un contrato o CPE, el abonado queda bloqueado contra reasignaciones erróneas.
+  - **Búsqueda en Vivo de Clientes**: Búsqueda instantánea entre 2,352 abonados al registrar nuevos contratos.
+  - **Flujo "Dar de Baja / Liberar Equipo CPE"**: Retiro seguro de routers y antenas sin desvincular el titular histórico.
+
+### Hito 4: Integración en Vivo con Nodos MikroTik RouterOS (270 min / 4.5 hrs)
+- **Área**: Infraestructura NOC & Red
+- **Alcance**: Comunicación nativa con routers MikroTik mediante la API RouterOS (`MikroTikNodeManager`) bajo el estándar **Zero-Mock**:
+  - Consulta en vivo a `/ppp/active` para validar sesiones vivas, Uptime e IP asignada.
+  - Consulta en vivo a `/ppp/secret` para verificar estado administrativo y perfil de velocidad.
+  - Modal interactivo de telemetría en tiempo real desde la tabla de contratos y el mapa georreferenciado.
+
+### Hito 5: Motor de Geocodificación & Nomenclatura Colombiana (180 min / 3.0 hrs)
+- **Área**: Geolocalización & GIS
+- **Alcance**: Motor inteligente para transformar direcciones informales en coordenadas GPS:
+  - Limpiador de nomenclatura: estandarización de abreviaturas (`CL`, `CRA`, `TRV`, `DG`) y remoción de pisos o comentarios tras `//`.
+  - Estrategia dual: Google Maps Geocoding API + fallback OpenStreetMap Nominatim.
+  - Procesamiento por lotes en background (`Geocodificar Lote (+25)`) con persistencia definitiva en PostgreSQL.
+
+### Hito 6: Tablero NOC Georreferenciado & Marker Clustering (240 min / 4.0 hrs)
+- **Área**: Cartografía & Operaciones
+- **Alcance**: Pantalla de mapa interactivo NOC a pantalla completa (`/dashboard/network-map`) con OpenStreetMap:
+  - **Marker Clustering Inteligente**: Agrupación por burbujas de densidad a nivel macro y apertura de pines individuales a nivel de calle.
+  - **Filtro por Nodo MikroTik**: Aislamiento inmediato de abonados por nodo (ej. `NOD-SERKOI-01`).
+  - **Tarjeta Flotante & Bottom Sheet**: Ficha técnica adaptativa en Desktop y panel deslizable para técnicos en terreno.
+  - Herramientas de campo: botones `Centrar en Mapa` y `Navegar GPS` (abre Google Maps o Waze).
+
+### Hito 7: Hardening de Seguridad, CSP & Estándares Next.js 16 (120 min / 2.0 hrs)
+- **Área**: Seguridad & Calidad
+- **Alcance**: Configuración de cabeceras estrictas en `proxy.ts` para Content Security Policy (CSP), autorizando dominios de mapas (`*.tile.openstreetmap.org`), CDNs confiables (`unpkg.com`) y APIs externas. Cumplimiento del 100% de reglas linter: 0 tipos `any` y líneas < 100 caracteres.
+
+---
+
+## 5. Matriz de Eficiencia y Aceleración
+
+| ID | Hito / Tarea de Lógica de Negocio | Estimado Manual | Con Antigravity (IA) | Ahorro | Factor |
+|:---:|---|:---:|:---:|:---:|:---:|
+| 1 | Arquitectura Multi-brand & Multi-tenant | 24 h | **3.0 h** (180 min) | 87.5% | 8.0x |
+| 2 | Migración ETL MariaDB &rarr; PostgreSQL | 40 h | **4.5 h** (270 min) | 88.8% | 8.9x |
+| 3 | Gestión Contratos, Titular & CPE | 36 h | **4.0 h** (240 min) | 88.9% | 9.0x |
+| 4 | Telemetría Real MikroTik RouterOS API | 48 h | **4.5 h** (270 min) | 90.6% | 10.7x |
+| 5 | Geocodificación Nomenclatura Colombiana | 32 h | **3.0 h** (180 min) | 90.6% | 10.7x |
+| 6 | Tablero NOC con Marker Clustering | 44 h | **4.0 h** (240 min) | 90.9% | 11.0x |
+| 7 | Hardening CSP & Estándares Next.js 16 | 16 h | **2.0 h** (120 min) | 87.5% | 8.0x |
+| **TOTAL** | **Lógica de Negocio SID Completa** | **240 h** | **25.0 h (1,500 min)** | **89.6%** | **9.6x** |
+
+---
+
+## 6. Retorno de Inversión y Consideraciones de Propiedad Intelectual
+
+1. **Retorno sobre la Inversión en I+D**:  
+   Los 3 meses invertidos en madurar la base ideal con IA se amortizan rápidamente: cualquier nuevo requerimiento o módulo comercial para Serkoi se construye en horas en lugar de semanas.
+2. **Propiedad Intelectual y Modelo de Entrega**:  
+   - **Código Fuente Base**: Propiedad del desarrollador, permitiendo su reutilización en otros sectores o proyectos.
+   - **Imágenes de Contenedor Docker**: Entregables para despliegue productivo de Serkoi SAS en sus servidores independientes.
+   - **Lógica de Negocio Específica**: Perteneciente a la sociedad operativa Serkoi SAS.
+3. **Cero Deuda Técnica**:  
+   A pesar de la alta velocidad de ejecución, todo el código se auditó bajo normas estrictas de tipado, seguridad y rendimiento continuo.
+
+
+  </script>
+  <script type="text/markdown" id="doc-api-cliente.md">
+# API Técnica: Consulta de Cliente & Estado del Servicio
+**Endpoint**: `GET /api/v1/cliente`  
+**Servicio**: Kontrol ISP API Gateway  
+**Consumo Principal**: Workflows n8n, Chatbots de WhatsApp, Portales de Autoservicio
+
+---
+
+## 1. Descripción General
+
+Permite a sistemas externos (como bots de atención al cliente en n8n o WhatsApp) consultar la información integral de un abonado en la base de datos productiva de **Kontrol ISP / Serkoi SAS**.
+
+El endpoint devuelve:
+- Datos personales y de contacto del titular.
+- Contrato activo, plan de navegación, velocidad y fecha de corte.
+- Equipos CPE instalados en sitio (marca, MAC, serial).
+- Estado financiero preliminar y saldo pendiente.
+- Estado de conexión física/lógica en el nodo MikroTik.
+
+---
+
+## 2. Autenticación & Seguridad
+
+Todas las peticiones requieren una **API Key de Marca** válida asociada a la empresa correspondiente (por ejemplo, Serkoi SAS).
+
+Puede suministrarse mediante cualquiera de estos tres métodos:
+
+1. **Cabecera HTTP Estándar (Recomendado)**:
+   ```http
+   x-api-key: isp_live_serkoi_token_2026
+   ```
+2. **Cabecera de Autorización Bearer**:
+   ```http
+   Authorization: Bearer isp_live_serkoi_token_2026
+   ```
+3. **Parámetro Query en la URL**:
+   ```http
+   GET /api/v1/cliente?documento=45495991&apiKey=isp_live_serkoi_token_2026
+   ```
+
+---
+
+## 3. Parámetros de Consulta (Query String)
+
+El endpoint requiere **estrictamente** el documento de identidad del abonado:
+
+| Parámetro | Tipo | Obligatorio | Descripción | Ejemplo |
+|---|---|---|---|---|
+| `documento` | `string` | **SÍ** | Cédula de ciudadanía o NIT del cliente registrado. | `45495991` |
+
+> Para garantizar máxima precisión y evitar colisiones entre líneas o sedes, la búsqueda de clientes opera exclusivamente por **documento**. La consulta devuelve la información del titular junto con todos sus contratos de servicio asociados y sus respectivos números de contrato (`numero_contrato`), los cuales deben usarse para el endpoint de diagnóstico técnico.
+
+---
+
+## 4. Respuestas del Servidor
+
+### Respuesta Exitosa (`200 OK`)
+```json
+{
+  "success": true,
+  "data": {
+    "client": {
+      "id": "clx123abc456",
+      "code": "CLI-0542",
+      "name": "CARLOS ANDRES RAMIREZ",
+      "identification": "1088294711",
+      "phone": "3101234567",
+      "email": "carlos.ramirez@gmail.com",
+      "address": "CRA 15 # 24-30 BARRIO CENTRO",
+      "city": "Pereira",
+      "department": "Risaralda"
+    },
+    "contract": {
+      "id": "cnt_998877",
+      "contractNumber": "CNT-2024-001",
+      "status": "ACTIVE",
+      "pppoeUser": "carlos_ramirez_ftth",
+      "ipAddress": "10.20.30.45",
+      "nodeName": "NOD-SERKOI-01",
+      "plan": {
+        "name": "Plan Fibra Residencial 50M",
+        "downloadSpeed": "50 Mbps",
+        "uploadSpeed": "25 Mbps",
+        "monthlyFee": 65000,
+        "cutOffDay": 10
+      }
+    },
+    "equipment": {
+      "hasCpe": true,
+      "model": "Huawei HG8145V5",
+      "macAddress": "48:57:02:1A:2B:3C",
+      "serialNumber": "HWTC1A2B3C4D"
+    },
+    "billing": {
+      "currentBalance": 0,
+      "paymentStatus": "UP_TO_DATE",
+      "lastPaymentDate": "2026-10-05T14:30:00.000Z"
+    },
+    "connectionStatus": "ONLINE"
+  }
+}
+```
+
+### Respuestas de Error Comunes
+
+#### `401 Unauthorized` (Falta o es inválida la API Key)
+```json
+{
+  "success": false,
+  "error": "API Key inválida o no proporcionada. Verifique las credenciales de la marca."
+}
+```
+
+#### `400 Bad Request` (Faltan parámetros de búsqueda)
+```json
+{
+  "success": false,
+  "error": "Debe especificar al menos un parámetro de búsqueda: cedula, contractNumber, phone, email o code."
+}
+```
+
+#### `404 Not Found` (Cliente no encontrado)
+```json
+{
+  "success": false,
+  "error": "No se encontró ningún abonado con los datos especificados."
+}
+```
+
+---
+
+## 5. Ejemplos de Implementación
+
+### Consumo vía cURL
+```bash
+curl -X GET "http://localhost:3016/api/v1/cliente?cedula=1088294711" \
+  -H "x-api-key: isp_live_serkoi_token_2026" \
+  -H "Accept: application/json"
+```
+
+### Configuración en n8n (Nodo HTTP Request)
+1. **Method**: `GET`
+2. **URL**: `http://kontrol-isp-app:3000/api/v1/cliente` (o URL pública del proxy)
+3. **Authentication**: `None` (usamos cabecera personalizada)
+4. **Send Headers**: Activado
+   - Name: `x-api-key`
+   - Value: `isp_live_serkoi_token_2026`
+5. **Send Query Parameters**: Activado
+   - Name: `cedula`
+   - Value: `{{ $json.chatInputIdentification }}`
+
+
+  </script>
+  <script type="text/markdown" id="doc-api-diagnostico.md">
+# API Técnica: Diagnóstico de Conexión & Telemetría MikroTik
+**Endpoint**: `GET /api/v1/diagnostico`  
+**Servicio**: Kontrol ISP Telemetry Engine  
+**Consumo Principal**: Diagnóstico de Soporte Técnico en n8n, NOC y WhatsApp Bot
+
+---
+
+## 1. Descripción General
+
+Permite realizar un **diagnóstico técnico en tiempo real** contra los routers de acceso **MikroTik RouterOS** que atienden a los abonados de **Kontrol ISP / Serkoi SAS**.
+
+Bajo el estándar **Zero-Mock**, este endpoint no genera respuestas simuladas: establece una conexión TCP directa vía RouterOS API (`MikroTikNodeManager`) con el nodo físico correspondiente para:
+1. Interrogar `/ppp/active` para saber si la sesión PPPoE está viva, su Uptime, tráfico y MAC de la ONT/CPE.
+2. Interrogar `/ppp/secret` para verificar si el usuario está activo o suspendido por mora (`profile: corte`).
+3. Generar un diagnóstico automático con recomendaciones para el cliente o técnico de soporte.
+
+---
+
+## 2. Autenticación & Seguridad
+
+Requiere una **API Key de Marca** activa.
+
+```http
+x-api-key: isp_live_serkoi_token_2026
+```
+
+---
+
+## 3. Parámetros de Consulta (Query String)
+
+El endpoint requiere **estrictamente** el número de contrato del servicio a diagnosticar:
+
+| Parámetro | Tipo | Obligatorio | Descripción | Ejemplo |
+|---|---|---|---|---|
+| `contrato` | `string` | **SÍ** | Número de contrato (`contractNumber`) en la base de datos. | `759` |
+
+> El diagnóstico físico/lógico se ejecuta a nivel de contrato individual contra el router MikroTik donde está provisionado el enlace. Si un abonado posee varios enlaces o sedes, primero debe consultarse el titular con `GET /api/v1/cliente?documento=...` para listar sus contratos y luego diagnosticar el contrato específico deseado.
+
+---
+
+## 4. Respuestas del Servidor
+
+### A. Escenario 1: Cliente Conectado y Navegando (`ONLINE`)
+```json
+{
+  "success": true,
+  "data": {
+    "status": "ONLINE",
+    "node": {
+      "id": "node_serkoi_01",
+      "name": "NOD-SERKOI-01",
+      "host": "192.168.88.1"
+    },
+    "pppoeUser": "carlos_ramirez_ftth",
+    "telemetry": {
+      "ipAddress": "10.20.30.45",
+      "uptime": "2d 14h 22m",
+      "uptimeSeconds": 224520,
+      "callerIdMac": "48:57:02:1A:2B:3C",
+      "rxBytes": 15849204000,
+      "txBytes": 4529014000,
+      "profile": "PLAN-50M-RESIDENCIAL",
+      "administrativeStatus": "ENABLED"
+    },
+    "diagnosis": {
+      "level": "SUCCESS",
+      "code": "OK_ONLINE",
+      "message": "La conexión está activa y transmitiendo tráfico correctamente.",
+      "suggestedAction": "Verificar señal Wi-Fi local si el cliente reporta lentitud."
+    }
+  }
+}
+```
+
+### B. Escenario 2: Equipo Apagado o Fibra Cortada (`OFFLINE`)
+```json
+{
+  "success": true,
+  "data": {
+    "status": "OFFLINE",
+    "node": {
+      "name": "NOD-SERKOI-01"
+    },
+    "pppoeUser": "carlos_ramirez_ftth",
+    "telemetry": {
+      "administrativeStatus": "ENABLED",
+      "lastLogout": "2026-11-04T18:12:00.000Z",
+      "lastCallerId": "48:57:02:1A:2B:3C"
+    },
+    "diagnosis": {
+      "level": "WARNING",
+      "code": "CPE_DISCONNECTED",
+      "message": "El usuario no presenta sesión PPPoE activa en el MikroTik.",
+      "suggestedAction": "Solicitar al cliente revisar si el router/ONT tiene los leds encendidos (Power y PON/LOS)."
+    }
+  }
+}
+```
+
+### C. Escenario 3: Servicio Suspendido por Mora (`SUSPENDED`)
+```json
+{
+  "success": true,
+  "data": {
+    "status": "SUSPENDED",
+    "node": {
+      "name": "NOD-SERKOI-01"
+    },
+    "pppoeUser": "carlos_ramirez_ftth",
+    "telemetry": {
+      "administrativeStatus": "DISABLED",
+      "profile": "MOROSOS_PORTAL"
+    },
+    "diagnosis": {
+      "level": "DANGER",
+      "code": "ADMINISTRATIVE_SUSPENSION",
+      "message": "El servicio se encuentra suspendido por corte administrativo o factura vencida.",
+      "suggestedAction": "Redirigir al cliente a la pasarela de pagos o reportar abono pendiente."
+    }
+  }
+}
+```
+
+---
+
+## 5. Ejemplos de Implementación
+
+### Consumo vía cURL
+```bash
+curl -X GET "http://localhost:3016/api/v1/diagnostico?pppoeUser=carlos_ramirez_ftth" \
+  -H "x-api-key: isp_live_serkoi_token_2026" \
+  -H "Accept: application/json"
+```
+
+### Configuración en n8n
+El workflow de n8n puede encadenar la consulta:
+1. Recibe la cédula por WhatsApp &rarr; Llama a `/api/v1/cliente`.
+2. Extrae el `contract.pppoeUser` de la respuesta.
+3. Invoca a `/api/v1/diagnostico?pppoeUser={{ $json.contract.pppoeUser }}`.
+4. Con un nodo `Switch` o `If`, responde automáticamente al abonado con el diagnóstico humano (`diagnosis.message`).
+
+
+  </script>
+  <script type="text/markdown" id="doc-arquitectura.md">
+# Arquitectura del Sistema: Kontrol ISP
+**Plataforma Integral de Gestión para Proveedores de Servicios de Internet (ISP)**  
+*Arquitectura Empresarial, Multi-Tenant, Next.js 16, Prisma ORM y Hardware MikroTik*
+
+---
+
+## 1. Visión General de la Arquitectura
+
+**Kontrol ISP** está diseñado bajo un modelo de arquitectura desacoplada y modular orientada a microservicios dentro de un monorepositorio estructurado:
+
+```
++-----------------------------------------------------------------------------------+
+|                            INTERFACES DE USUARIO & CLIENTES                       |
+|   Portal Administrativo Web     |     NOC Cartográfico     |     App Móvil Técnicos |
++-----------------------------------------------------------------------------------+
+                                         |
+                                  HTTPS / WSS / REST
+                                         v
++-----------------------------------------------------------------------------------+
+|                        NEXT.JS 16 CORE ENGINE (services/app)                      |
+|                                                                                   |
+|  [Edge Proxy (src/proxy.ts)]  -->  [Auth & RBAC (NextAuth)]  -->  [i18n Provider] |
+|  [Server Actions (src/actions)]                                                   |
+|       * clients.ts, contracts.ts, nodes.ts, mikrotik.ts                           |
+|  [API Gateway (src/app/api/v1/)]                                                  |
+|       * /cliente, /diagnostico, /brand, /webhooks                                 |
+|  [Zod Validation Layer (src/lib/validations/)]                                     |
++-----------------------------------------------------------------------------------+
+              |                                            |
+       TCP API (Port 8728)                               SQL (Port 5432)
+              v                                            v
++----------------------------+             +---------------------------------------+
+|  ROUTERS MIKROTIK ROUTEROS |             |      POSTGRESQL (kontrol_db)          |
+|  * /ppp/active             |             |  * Tenants & Brands (Multi-tenant)     |
+|  * /ppp/secret             |             |  * Clients, Contracts, CPEs           |
+|  * Queues & Simple QoS     |             |  * unaccent & f_unaccent Extension    |
++----------------------------+             +---------------------------------------+
+              ^                                            ^
+              | ETL (Migración)                            | Eventos / Webhooks
+              |                                            v
++----------------------------+             +---------------------------------------+
+|  MARIADB LEGACY (SID ERP)  |             |      AUTOMATIZACIÓN & AGENTES N8N     |
+|  * 2,575 contratos         |             |  * Bot de WhatsApp (Evolution API)   |
+|  * 2,352 clientes          |             |  * Facturación y Notificaciones DIAN  |
++----------------------------+             +---------------------------------------+
+```
+
+---
+
+## 2. Pilares Tecnológicos Centrales
+
+### 1. Núcleo Web y Servidor
+- **Next.js 16 (App Router)**: Renderizado híbrido (RSC para tablas pesadas y Client Components para mapas y telemetría interactiva).
+- **Edge Proxy (`src/proxy.ts`)**: Control centralizado de seguridad, cabeceras HTTP estrictas (CSP, CORS, X-Frame-Options) y enrutamiento RBAC.
+- **Tailwind CSS v4 & Next Themes**: Soporte dual automático para temas **Claro / Oscuro**, con variantes `@custom-variant dark`.
+
+### 2. Base de Datos & Acceso de Datos
+- **PostgreSQL 16**: Motor de persistencia principal.
+- **Prisma ORM**: Tipado seguro generado a partir de `schema.prisma`. Modelo `User`, `Brand`, `Client`, `Contract`, `ContractEquipment`, `MikrotikNode`.
+- **Búsqueda Insensible a Acentos (`unaccent`)**:
+  - Implementación de la función SQL inmutable `public.f_unaccent(text)`.
+  - Búsquedas normalizadas mediante el helper `@/lib/search` (`searchIdsWithUnaccent`), garantizando que búsquedas como "Perez", "Pérez" o "perez" coincidan con el 100% de registros.
+
+### 3. Modelo Multi-Tenant & Multi-Brand
+- Cada ISP o filial opera bajo un registro en la tabla `Brand`.
+- Los contratos, clientes, nodos de red y usuarios se aíslan a nivel de base de datos con clave foránea `brandId`.
+- **API Keys por Marca**: Cada empresa dispone de sus propias credenciales seguras para exponer endpoints a plataformas de terceros o n8n.
+
+### 4. Telemetría de Red MikroTik (Estándar Zero-Mock)
+- Conexión nativa con la API de RouterOS mediante `MikroTikNodeManager` (`services/app/src/lib/mikrotik/`).
+- **Cero Simulación**: Cualquier consulta de estado o telemetría se realiza contra el hardware real; si el router no responde o el host es inalcanzable, el sistema reporta el fallo explícito para asegurar diagnósticos confiables.
+
+### 5. Motor Cartográfico & NOC
+- **Leaflet & MarkerCluster**: Visualización de abonados en mapa georreferenciado con agrupamiento dinámico por clusters para soportar miles de pines sin degradación de rendimiento.
+- **Geocodificación Especializada**: Normalizador de nomenclatura de direcciones de Colombia (Google Geocoding API + fallback Nominatim OSM).
+
+---
+
+## 3. Estándares de Código y Buenas Prácticas
+
+1. **Cero Tipos `any`**: TypeScript en modo estricto en el 100% de interfaces y Server Actions.
+2. **Límite de Línea (<100 Caracteres)**: Todo el código fuente mantiene un ancho máximo para garantizar legibilidad en revisiones y diffs.
+3. **Auditoría de Registros**:
+   - Campos `createdBy` y `updatedBy` gestionados automáticamente en Prisma para entidades de negocio.
+   - Timestamps en UTC (`DateTime @default(now())`).
+4. **Validación Dual Zod**:
+   - Validación del lado del cliente en formularios con `react-hook-form` + `@hookform/resolvers/zod`.
+   - Re-validación del lado del servidor en Server Actions con `schema.safeParse()`.
+
+---
+
+## 4. Comandos Rápidos del Ecosistema Docker
+
+El proyecto se gestiona 100% aislado dentro de contenedores Docker mediante atajos de `Makefile`:
+
+```bash
+make dev-up-d     # Iniciar servicios en segundo plano
+make logs         # Monitorear logs de los contenedores
+make db-migrate   # Ejecutar migraciones de Prisma
+make db-seed      # Sembrar datos maestros idempotentes
+make check        # Validar TypeScript y ESLint dentro del contenedor
+make db-studio    # Abrir Prisma Studio para inspección visual
+```
+
+
+  </script>
+  <script>
+    // Theme Management
+    const themeToggleBtn = document.getElementById('themeToggle');
+    const htmlEl = document.documentElement;
+
+    function applyTheme(isDark) {
+      if (isDark) {
+        htmlEl.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        htmlEl.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+      }
+    }
+
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      applyTheme(true);
+    } else {
+      applyTheme(false);
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+      applyTheme(!htmlEl.classList.contains('dark'));
+    });
+
+    // Mobile Sidebar Drawer Management
+    const sidebar = document.getElementById('sidebar');
+    const mobileOverlay = document.getElementById('mobileOverlay');
+    const openSidebarBtn = document.getElementById('openSidebarBtn');
+    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+
+    function openMobileSidebar() {
+      sidebar.classList.remove('-translate-x-full');
+      mobileOverlay.classList.remove('hidden');
+    }
+
+    function closeMobileSidebar() {
+      sidebar.classList.add('-translate-x-full');
+      mobileOverlay.classList.add('hidden');
+    }
+
+    openSidebarBtn.addEventListener('click', openMobileSidebar);
+    closeSidebarBtn.addEventListener('click', closeMobileSidebar);
+    mobileOverlay.addEventListener('click', closeMobileSidebar);
+
+    // Markdown Loader & Render Logic
+    let currentDocFile = 'inversion.md';
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const errorCard = document.getElementById('errorCard');
+    const errorMessage = document.getElementById('errorMessage');
+    const markdownContainer = document.getElementById('markdownContainer');
+    const activeDocTitle = document.getElementById('activeDocTitle');
+
+    // Configure Marked.js
+    marked.setOptions({
+      highlight: function (code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      },
+      breaks: true,
+      gfm: true
+    });
+
+    // Document Titles Mapping
+    const docTitles = {
+      'inversion.md': 'Informe de Inversión & Aceleración con IA',
+      'api-cliente.md': 'API: Consulta de Cliente & Servicios',
+      'api-diagnostico.md': 'API: Diagnóstico MikroTik RouterOS',
+      'arquitectura.md': 'Arquitectura del Sistema Kontrol ISP'
+    };
+
+    function getEmbeddedDoc(filename) {
+      const el = document.getElementById('doc-' + filename);
+      return el ? el.textContent.trim() : null;
+    }
+
+    async function loadDocument(filename) {
+      currentDocFile = filename;
+      activeDocTitle.textContent = docTitles[filename] || filename;
+
+      // Update sidebar active classes
+      document.querySelectorAll('.nav-item').forEach(el => {
+        const file = el.getAttribute('data-file');
+        if (file === filename) {
+          el.className = 'nav-item flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20';
+        } else {
+          el.className = 'nav-item flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors';
+        }
+      });
+
+      // Show loader
+      loadingSpinner.classList.remove('hidden');
+      errorCard.classList.add('hidden');
+      markdownContainer.classList.add('hidden');
+
+      let markdownText = null;
+
+      // Check if running directly via file:// protocol
+      if (window.location.protocol === 'file:') {
+        // Read directly from embedded script tags (CORS immune)
+        markdownText = getEmbeddedDoc(filename);
+      } else {
+        // Try fetch first when hosted on HTTP/HTTPS
+        try {
+          const response = await fetch(filename, { cache: 'no-cache' });
+          if (response.ok) {
+            markdownText = await response.text();
+          } else {
+            markdownText = getEmbeddedDoc(filename);
+          }
+        } catch (fetchErr) {
+          // Network / CORS fallback
+          markdownText = getEmbeddedDoc(filename);
+        }
+      }
+
+      if (!markdownText) {
+        loadingSpinner.classList.add('hidden');
+        errorCard.classList.remove('hidden');
+        errorMessage.textContent = 'No se encontró el contenido del documento ' + filename;
+        return;
+      }
+
+      try {
+        // Render Markdown
+        markdownContainer.innerHTML = marked.parse(markdownText);
+
+        // Add Copy Buttons to Pre Code Blocks
+        markdownContainer.querySelectorAll('pre').forEach(preBlock => {
+          const btn = document.createElement('button');
+          btn.className = 'copy-btn';
+          btn.innerText = 'Copiar';
+          btn.addEventListener('click', async () => {
+            const code = preBlock.querySelector('code')?.innerText || preBlock.innerText;
+            await navigator.clipboard.writeText(code);
+            btn.innerText = '¡Copiado!';
+            setTimeout(() => { btn.innerText = 'Copiar'; }, 2000);
+          });
+          preBlock.appendChild(btn);
+        });
+
+        loadingSpinner.classList.add('hidden');
+        markdownContainer.classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        // Close mobile drawer if opened
+        closeMobileSidebar();
+
+      } catch (err) {
+        loadingSpinner.classList.add('hidden');
+        errorCard.classList.remove('hidden');
+        errorMessage.textContent = err.message;
+      }
+    }
+
+    // Routing by Hash
+    function handleHashChange() {
+      const hash = window.location.hash.replace('#', '').trim();
+      const targetDoc = hash && docTitles[hash] ? hash : 'inversion.md';
+      loadDocument(targetDoc);
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+
+    // Document Filter in Sidebar
+    const docFilterInput = document.getElementById('docFilterInput');
+    docFilterInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase().trim();
+      document.querySelectorAll('.nav-item').forEach(el => {
+        const text = el.innerText.toLowerCase();
+        if (text.includes(query)) {
+          el.parentElement.style.display = 'block';
+          el.style.display = 'flex';
+        } else {
+          el.style.display = 'none';
+        }
+      });
+    });
+
+    // Initial Load
+    handleHashChange();
+  </script>
+</body>
+
+</html>
