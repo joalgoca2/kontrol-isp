@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { searchIdsWithUnaccent } from "@/lib/search";
@@ -15,6 +16,7 @@ import type {
   Contract,
   ContractsPaginatedResponse,
   MikrotikLiveDiagnostic,
+  TrafficLightColor,
 } from "@/types";
 
 export interface GetContractsPaginatedParams {
@@ -462,11 +464,67 @@ export async function runLiveContractDiagnostic(
       return { success: false, error: "Contrato no encontrado." };
     }
 
+    if (!contract.node) {
+      return {
+        success: false,
+        error: "El contrato no tiene un nodo MikroTik asignado.",
+      };
+    }
+
     const diag = await getClientPppSession(
       contract.node,
       contract.pppoeUser,
       contract.ipAddress
     );
+
+    let trafficLight: TrafficLightColor = "GREEN";
+    let trafficSummary = "Enlace activo y navegando con normalidad.";
+    let trafficRecommendation =
+      "El equipo del abonado responde correctamente a la red.";
+
+    if (!diag.connected) {
+      trafficLight = "RED";
+      trafficSummary = "Router MikroTik inaccesible o fuera de línea.";
+      trafficRecommendation =
+        `Verificar conectividad IP y credenciales con el nodo ` +
+        `${contract.node.name || "MikroTik"}.`;
+    } else if (diag.secretDisabled) {
+      trafficLight = "RED";
+      trafficSummary =
+        "Servicio suspendido en MikroTik (Secret deshabilitado).";
+      trafficRecommendation =
+        "Corte administrativo por mora o retiro. Habilitar tras conciliar pago.";
+    } else if (!diag.sessionFound) {
+      trafficLight = "RED";
+      if (!diag.secretFound) {
+        trafficSummary = "Usuario PPPoE no registrado en el router.";
+        trafficRecommendation =
+          "El secret no existe en RouterOS. Requiere sincronización desde Kontrol ISP.";
+      } else {
+        const disconnect = diag.lastDisconnectReason
+          ? ` (${diag.lastDisconnectReason})`
+          : "";
+        trafficSummary =
+          `Router apagado o fibra óptica desconectada${disconnect}.`;
+        trafficRecommendation =
+          "Verificar energía eléctrica en domicilio o niveles ópticos.";
+      }
+    } else if (diag.latencyMs !== undefined && diag.latencyMs >= 80) {
+      trafficLight = "YELLOW";
+      trafficSummary = `Latencia elevada detectada (${diag.latencyMs} ms).`;
+      trafficRecommendation =
+        "Posible saturación en cola de tráfico o interferencia en la red.";
+    } else {
+      trafficLight = "GREEN";
+      trafficSummary =
+        "Enlace óptimo: Sesión PPPoE levantada y transmitiendo.";
+      trafficRecommendation =
+        "El servicio opera al 100% en RouterOS sin degradación.";
+    }
+
+    diag.trafficLight = trafficLight;
+    diag.trafficSummary = trafficSummary;
+    diag.trafficRecommendation = trafficRecommendation;
 
     const actor = session.user.email ?? null;
     const updateData: Record<string, unknown> = {
@@ -595,6 +653,13 @@ export async function toggleContractSuspension(
       suspend
     );
 
+    if (!routerRes.success) {
+      return {
+        success: false,
+        error: routerRes.message,
+      };
+    }
+
     const actor = session.user.email ?? null;
     // Update billing status
     await prisma.contract.update({
@@ -606,6 +671,7 @@ export async function toggleContractSuspension(
       },
     });
 
+    revalidatePath("/dashboard/contracts");
     return {
       success: true,
       data: { message: routerRes.message },
@@ -639,8 +705,16 @@ export async function kickContractSessionAction(
 
     const res = await kickClientSession(contract.node, contract.pppoeUser);
 
+    if (!res.success) {
+      return {
+        success: false,
+        error: res.message,
+      };
+    }
+
+    revalidatePath("/dashboard/contracts");
     return {
-      success: res.success,
+      success: true,
       data: { message: res.message },
     };
   } catch (err: unknown) {
@@ -802,12 +876,33 @@ export async function bulkToggleContractsSuspension(
       include: { node: true },
     });
 
+    let permissionErrorDetected = false;
     for (const c of targetContracts) {
       try {
-        await setClientSuspensionOnRouter(c.node, c.pppoeUser, suspend);
+        const rRes = await setClientSuspensionOnRouter(
+          c.node,
+          c.pppoeUser,
+          suspend
+        );
+        if (
+          !rRes.success &&
+          rRes.message.includes("Permiso denegado en MikroTik")
+        ) {
+          permissionErrorDetected = true;
+        }
       } catch (_err) {
         // Ignore individual router network timeouts in batch
       }
+    }
+
+    if (permissionErrorDetected) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado en MikroTik: El nodo tiene configurado un " +
+          "usuario de solo lectura ('read'). Se requieren permisos de " +
+          "escritura ('write') en RouterOS para suspender o reactivar enlaces.",
+      };
     }
 
     const actor = session.user.email ?? null;

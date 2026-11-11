@@ -4,9 +4,21 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { searchIdsWithUnaccent } from "@/lib/search";
-import { paymentRecordSchema } from "@/lib/validations/isp";
+import {
+  paymentRecordSchema,
+  billingCycleSchema,
+  paymentPromiseSchema,
+} from "@/lib/validations/isp";
 import { setClientSuspensionOnRouter } from "@/lib/mikrotik/node-manager";
 import { triggerOutboundWebhook } from "@/lib/webhook";
+import {
+  generateMonthlyInvoices,
+  grantPaymentPromise,
+  checkAndCutExpiredPromises,
+  type MonthlyBillingResult,
+  type PaymentPromiseResult,
+  type ExpiredPromisesResult,
+} from "@/lib/payments/billing-cycle";
 import {
   analyzeReconciliationBatch,
   applyReconciliationBatch,
@@ -719,6 +731,167 @@ export async function generateOnlinePaymentCheckoutAction(
       err instanceof Error
         ? err.message
         : "Error al generar enlace de pago en línea.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Executes or triggers monthly invoice generation for a specific brand and period.
+ */
+export async function generateMonthlyInvoicesAction(
+  rawInput: unknown
+): Promise<ApiResponse<MonthlyBillingResult>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasBillingAccess(session.user.roles)) {
+      return {
+        success: false,
+        error: "Acceso denegado: se requiere rol de Facturación o Administrador.",
+      };
+    }
+
+    const parsed = billingCycleSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Parámetros del ciclo no válidos.",
+      };
+    }
+
+    const { brandId, year, month } = parsed.data;
+    const isSuperAdmin = session.user.roles?.includes("SUPER_ADMIN");
+    if (!isSuperAdmin && session.user.brandId !== brandId) {
+      return {
+        success: false,
+        error: "No tienes permiso para facturar esta marca.",
+      };
+    }
+
+    const actor = session.user.email ?? session.user.name ?? "Operador Web";
+    const result = await generateMonthlyInvoices({
+      brandId,
+      year,
+      month,
+      actor,
+    });
+
+    revalidatePath("/dashboard/billing");
+    return { success: true, data: result };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al generar el ciclo de facturación.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Grants a temporary payment grace period (promise), reactivating the contract in MikroTik.
+ */
+export async function grantContractPromiseAction(
+  rawInput: unknown
+): Promise<ApiResponse<PaymentPromiseResult>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    const userRoles = session.user.roles ?? [];
+    const canGrant = userRoles.some((r) =>
+      ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT"].includes(r)
+    );
+    if (!canGrant) {
+      return {
+        success: false,
+        error: "Acceso denegado: permisos insuficientes para otorgar prórrogas.",
+      };
+    }
+
+    const parsed = paymentPromiseSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Datos de prórroga inválidos.",
+      };
+    }
+
+    const { contractId, hours, notes } = parsed.data;
+    const contract = await prisma.contract.findUnique({
+      where: { id: contractId },
+      select: { brandId: true },
+    });
+
+    if (!contract) {
+      return { success: false, error: "Contrato no encontrado." };
+    }
+
+    const isSuperAdmin = userRoles.includes("SUPER_ADMIN");
+    if (!isSuperAdmin && session.user.brandId !== contract.brandId) {
+      return {
+        success: false,
+        error: "No tienes permiso para operar sobre contratos de esta marca.",
+      };
+    }
+
+    const actor = session.user.email ?? session.user.name ?? "Operador Web";
+    const result = await grantPaymentPromise({
+      contractId,
+      hours,
+      notes: notes ?? null,
+      actor,
+    });
+
+    revalidatePath("/dashboard/contracts");
+    revalidatePath("/dashboard/billing");
+    return { success: true, data: result };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al otorgar prórroga de pago.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Checks open promises and re-cuts MikroTik service for expired contracts without payment.
+ */
+export async function checkExpiredPromisesAction(
+  brandId?: string
+): Promise<ApiResponse<ExpiredPromisesResult>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasBillingAccess(session.user.roles)) {
+      return {
+        success: false,
+        error: "Acceso denegado: se requiere rol de Facturación o Administrador.",
+      };
+    }
+
+    const actor = session.user.email ?? "Operador Web";
+    const result = await checkAndCutExpiredPromises({
+      brandId: brandId && brandId !== "ALL" ? brandId : undefined,
+      actor,
+    });
+
+    revalidatePath("/dashboard/contracts");
+    revalidatePath("/dashboard/billing");
+    return { success: true, data: result };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al verificar prórrogas vencidas.";
     return { success: false, error: message };
   }
 }

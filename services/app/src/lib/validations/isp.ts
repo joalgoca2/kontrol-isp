@@ -170,3 +170,15 @@ export const supportTicketSchema = z.object({
     .min(5, "La descripción debe tener al menos 5 caracteres.")
     .max(2000),
 });
+
+export const billingCycleSchema = z.object({
+  brandId: z.string().min(1, "La marca es requerida."),
+  year: z.coerce.number().int().min(2020).max(2050),
+  month: z.coerce.number().int().min(1).max(12),
+});
+
+export const paymentPromiseSchema = z.object({
+  contractId: z.string().min(1, "El contrato es requerido."),
+  hours: z.coerce.number().int().min(1).max(168).default(24),
+  notes: z.string().trim().max(300).optional().nullable(),
+});

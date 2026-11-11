@@ -38,11 +38,19 @@ export async function executeOnNode<T>(
   try {
     const ok = await client.connect();
     if (ok) {
-      const result = await callback(client);
-      return { success: true, data: result, usedFallback: false };
+      try {
+        const result = await callback(client);
+        return { success: true, data: result, usedFallback: false };
+      } catch (callbackErr: unknown) {
+        const msg =
+          callbackErr instanceof Error
+            ? callbackErr.message
+            : String(callbackErr);
+        return { success: false, error: msg, usedFallback: false };
+      }
     }
   } catch (_primaryErr) {
-    // Primary failed, proceed to fallback if available
+    // Primary connection failed, proceed to fallback if available
   } finally {
     client.disconnect();
   }
@@ -61,11 +69,19 @@ export async function executeOnNode<T>(
     try {
       const ok = await client.connect();
       if (ok) {
-        const result = await callback(client);
-        return { success: true, data: result, usedFallback: true };
+        try {
+          const result = await callback(client);
+          return { success: true, data: result, usedFallback: true };
+        } catch (fallbackExecErr: unknown) {
+          const msg =
+            fallbackExecErr instanceof Error
+              ? fallbackExecErr.message
+              : String(fallbackExecErr);
+          return { success: false, error: msg, usedFallback: true };
+        }
       }
     } catch (_fallbackErr) {
-      // Fallback also failed
+      // Fallback connection also failed
     } finally {
       client.disconnect();
     }
@@ -128,7 +144,7 @@ export async function testNodeHealth(
     connected: false,
     latencyMs,
     activeSessions: 0,
-    error: res.error,
+    error: formatMikrotikError(res.error),
   };
 }
 
@@ -210,8 +226,27 @@ export async function getClientPppSession(
     targetHost: node.host,
     targetPort: node.port,
     sessionFound: false,
-    error: res.error,
+    error: formatMikrotikError(res.error),
   };
+}
+
+export function formatMikrotikError(err?: string): string {
+  if (!err) return "Error desconocido en RouterOS.";
+  const lower = err.toLowerCase();
+  if (
+    lower.includes("not permitted") ||
+    lower.includes("permission") ||
+    lower.includes("access denied") ||
+    lower.includes("cannot change") ||
+    lower.includes("not enough permissions")
+  ) {
+    return (
+      "Permiso denegado en MikroTik: El usuario configurado en el nodo tiene " +
+      "permisos de solo lectura ('read'). Se requieren permisos de escritura ('write') " +
+      "en RouterOS para suspender, reactivar o reiniciar sesiones PPPoE."
+    );
+  }
+  return err;
 }
 
 export async function kickClientSession(
@@ -223,12 +258,18 @@ export async function kickClientSession(
       "/ppp/active/print",
       `?name=${pppoeUser}`,
     ]);
+    if (findRes.trap) {
+      throw new Error(findRes.error || "action not permitted");
+    }
     const active = findRes.sentences[0];
     if (active && active[".id"]) {
-      await client.executeSentence([
+      const removeRes = await client.executeSentence([
         "/ppp/active/remove",
         `=.id=${active[".id"]}`,
       ]);
+      if (removeRes.trap) {
+        throw new Error(removeRes.error || "action not permitted");
+      }
       return true;
     }
     return false;
@@ -245,9 +286,7 @@ export async function kickClientSession(
 
   return {
     success: false,
-    message:
-      res.error ||
-      `No se pudo reiniciar la sesión de '${pppoeUser}' en el router.`,
+    message: formatMikrotikError(res.error),
   };
 }
 
@@ -261,25 +300,37 @@ export async function setClientSuspensionOnRouter(
       "/ppp/secret/print",
       `?name=${pppoeUser}`,
     ]);
+    if (findRes.trap) {
+      throw new Error(findRes.error || "action not permitted");
+    }
     const secret = findRes.sentences[0];
     if (secret && secret[".id"]) {
-      await client.executeSentence([
+      const setRes = await client.executeSentence([
         "/ppp/secret/set",
         `=.id=${secret[".id"]}`,
         `=disabled=${suspend ? "yes" : "no"}`,
       ]);
+      if (setRes.trap) {
+        throw new Error(setRes.error || "action not permitted");
+      }
 
       if (suspend) {
         const activeRes = await client.executeSentence([
           "/ppp/active/print",
           `?name=${pppoeUser}`,
         ]);
+        if (activeRes.trap) {
+          throw new Error(activeRes.error || "action not permitted");
+        }
         const active = activeRes.sentences[0];
         if (active && active[".id"]) {
-          await client.executeSentence([
+          const removeRes = await client.executeSentence([
             "/ppp/active/remove",
             `=.id=${active[".id"]}`,
           ]);
+          if (removeRes.trap) {
+            throw new Error(removeRes.error || "action not permitted");
+          }
         }
       }
       return true;
@@ -298,8 +349,6 @@ export async function setClientSuspensionOnRouter(
 
   return {
     success: false,
-    message:
-      res.error ||
-      `No se pudo actualizar el estado de '${pppoeUser}' en el router.`,
+    message: formatMikrotikError(res.error),
   };
 }

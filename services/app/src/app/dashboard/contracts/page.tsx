@@ -13,7 +13,6 @@ import {
   Wifi,
   Server,
   CheckCircle2,
-  XCircle,
   Radio,
   AlertTriangle,
   List,
@@ -23,7 +22,7 @@ import {
   X,
   Router,
   MapPin,
-  Cpu,
+  CalendarClock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "@/components/providers/i18n-provider";
@@ -38,6 +37,7 @@ import {
   bulkToggleContractsSuspension,
   bulkDeleteContracts,
 } from "@/actions/contracts";
+import { grantContractPromiseAction } from "@/actions/billing";
 import { getMikrotikNodes } from "@/actions/nodes";
 import { getPlans } from "@/actions/plans";
 import { getClients } from "@/actions/clients";
@@ -88,6 +88,10 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { PaginationControl } from "@/components/ui/pagination-control";
+import { ClientSearchSelector } from "@/components/common/client-search-selector";
+import {
+  ContractExpressDiagnosticCard,
+} from "@/components/common/contract-express-diagnostic";
 import {
   ActionsDropdown,
   type ActionDropdownItem,
@@ -263,6 +267,45 @@ function ContractsTableContent() {
   >(null);
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
+  // Payment Promise Modal State
+  const [promiseContract, setPromiseContract] = useState<Contract | null>(null);
+  const [promiseHours, setPromiseHours] = useState<number>(24);
+  const [promiseNotes, setPromiseNotes] = useState<string>("");
+  const [isSubmittingPromise, setIsSubmittingPromise] =
+    useState<boolean>(false);
+
+  const handleOpenPromiseModal = (contract: Contract) => {
+    setPromiseContract(contract);
+    setPromiseHours(24);
+    setPromiseNotes("");
+  };
+
+  const handleConfirmPromise = async () => {
+    if (!promiseContract) return;
+    setIsSubmittingPromise(true);
+    try {
+      const res = await grantContractPromiseAction({
+        contractId: promiseContract.id,
+        hours: promiseHours,
+        notes: promiseNotes.trim() || undefined,
+      });
+      if (res.success && res.data) {
+        toast.success(
+          `${t("contracts.promiseSuccess", "Prórroga concedida exitosamente.")} ` +
+            `#${res.data.contractNumber} (${res.data.hours}h).`
+        );
+        setPromiseContract(null);
+        loadContracts();
+      } else {
+        toast.error(res.error || "No se pudo conceder la prórroga de pago.");
+      }
+    } catch (_err) {
+      toast.error("Error al otorgar la prórroga.");
+    } finally {
+      setIsSubmittingPromise(false);
+    }
+  };
+
   const updateUrlParams = useCallback(
     (updates: {
       page?: number;
@@ -410,38 +453,12 @@ function ContractsTableContent() {
     updateUrlParams({ search: "", page: 1 });
   };
 
-  const [clientSearchTerm, setClientSearchTerm] = useState<string>("");
-  const [isSearchingClients, setIsSearchingClients] = useState<boolean>(false);
-
-  const handleSearchClientsForModal = async () => {
-    setIsSearchingClients(true);
-    try {
-      const res = await getClients({
-        brandId: activeBrandId,
-        search: clientSearchTerm.trim(),
-        pageSize: 50,
-      });
-      if (res.success && res.data) {
-        setClientsList(res.data.items);
-        if (res.data.items.length > 0 && editingContract && !editingContract.id) {
-          setEditingContract({
-            ...editingContract,
-            clientId: res.data.items[0].id,
-          });
-        }
-      }
-    } finally {
-      setIsSearchingClients(false);
-    }
-  };
-
   const handleOpenCreate = () => {
     const defaultBrandId =
       activeBrandId !== "ALL" ? activeBrandId : activeBrand?.id || "";
-    setClientSearchTerm("");
     setEditingContract({
       brandId: defaultBrandId,
-      clientId: clientsList[0]?.id || "",
+      clientId: "",
       clientLabel: "",
       contractNumber: `SER-${Math.floor(1000 + Math.random() * 9000)}`,
       address: "",
@@ -1333,6 +1350,14 @@ function ContractsTableContent() {
                       onClick: () => handleKickSession(c),
                     },
                     {
+                      label: t(
+                        "contracts.actionPromise",
+                        "Conceder Prórroga de Pago"
+                      ),
+                      icon: CalendarClock,
+                      onClick: () => handleOpenPromiseModal(c),
+                    },
+                    {
                       label: t("contracts.actionEdit", "Editar Contrato"),
                       icon: Edit2,
                       onClick: () => handleOpenEdit(c),
@@ -1435,7 +1460,12 @@ function ContractsTableContent() {
                             title={c.client?.fullName}
                           >
                             {c.client?.clientCode && (
-                              <span className="text-emerald-600 dark:text-emerald-400 mr-1 font-mono">
+                              <span
+                                className={cn(
+                                  "text-emerald-600 dark:text-emerald-400",
+                                  "mr-1 font-mono"
+                                )}
+                              >
                                 #{c.client.clientCode} &bull;
                               </span>
                             )}
@@ -1649,6 +1679,14 @@ function ContractsTableContent() {
                     ),
                     icon: RefreshCw,
                     onClick: () => handleKickSession(c),
+                  },
+                  {
+                    label: t(
+                      "contracts.actionPromise",
+                      "Conceder Prórroga de Pago"
+                    ),
+                    icon: CalendarClock,
+                    onClick: () => handleOpenPromiseModal(c),
                   },
                   {
                     label: t("contracts.actionEdit", "Editar Contrato"),
@@ -1870,78 +1908,57 @@ function ContractsTableContent() {
             <form onSubmit={handleSaveContract} className="space-y-4 mt-2">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2 space-y-1">
-                  <Label className="text-xs font-bold">
-                    {t("contracts.labelClient", "Titular / Abonado *")}
-                  </Label>
                   {editingContract.id ? (
-                    <div
-                      className={cn(
-                        "h-9 px-3 rounded-xl border border-zinc-200",
-                        "dark:border-zinc-800 bg-zinc-100/80 dark:bg-zinc-900",
-                        "flex items-center justify-between gap-2 text-xs"
-                      )}
-                    >
-                      <span
-                        className="font-bold text-zinc-800 dark:text-zinc-200 truncate"
-                        title={editingContract.clientLabel}
+                    <>
+                      <Label className="text-xs font-bold">
+                        {t("contracts.labelClient", "Titular / Abonado *")}
+                      </Label>
+                      <div
+                        className={cn(
+                          "h-9 px-3 rounded-xl border border-zinc-200",
+                          "dark:border-zinc-800 bg-zinc-100/80 dark:bg-zinc-900",
+                          "flex items-center justify-between gap-2 text-xs"
+                        )}
                       >
-                        {editingContract.clientLabel}
-                      </span>
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] shrink-0 font-mono"
-                      >
-                        Titular Fijo
-                      </Badge>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <div className="flex gap-1.5">
-                        <Input
-                          value={clientSearchTerm}
-                          onChange={(e) => setClientSearchTerm(e.target.value)}
-                          placeholder="Buscar titular por nombre o cédula..."
-                          className="h-8 rounded-xl text-xs"
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleSearchClientsForModal();
-                            }
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          disabled={isSearchingClients}
-                          onClick={handleSearchClientsForModal}
-                          className="h-8 rounded-xl text-xs px-2.5 shrink-0"
+                        <span
+                          className="font-bold text-zinc-800 dark:text-zinc-200 truncate"
+                          title={editingContract.clientLabel}
                         >
-                          <Search className="h-3.5 w-3.5 mr-1" />
-                          {isSearchingClients ? "..." : "Buscar"}
-                        </Button>
+                          {editingContract.clientLabel}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] shrink-0 font-mono"
+                        >
+                          Titular Fijo
+                        </Badge>
                       </div>
-                      <Select
-                        value={editingContract.clientId}
-                        onValueChange={(val) =>
-                          setEditingContract({
-                            ...editingContract,
-                            clientId: val,
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-9 rounded-xl text-xs">
-                          <SelectValue placeholder="Seleccionar titular..." />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl text-xs max-h-60">
-                          {clientsList.map((cl) => (
-                            <SelectItem key={cl.id} value={cl.id}>
-                              {cl.fullName} ({cl.documentNumber})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    </>
+                  ) : (
+                    <ClientSearchSelector
+                      clients={clientsList}
+                      selectedClientId={editingContract.clientId}
+                      onSelect={(client) => {
+                        setEditingContract({
+                          ...editingContract,
+                          clientId: client?.id || "",
+                          clientLabel: client?.fullName || "",
+                          address:
+                            client?.address || editingContract.address,
+                          city: client?.city || editingContract.city,
+                        });
+                      }}
+                      onSearchServer={async (query) => {
+                        const res = await getClients({
+                          brandId: activeBrandId,
+                          search: query,
+                          pageSize: 10,
+                        });
+                        return res.success && res.data ? res.data.items : [];
+                      }}
+                      label={t("contracts.labelClient", "Titular / Abonado")}
+                      required
+                    />
                   )}
                 </div>
 
@@ -2456,183 +2473,12 @@ function ContractsTableContent() {
                 </div>
               </div>
 
-              {diagLoading ? (
-                <div className="p-10 text-center space-y-3">
-                  <RefreshCw className="h-8 w-8 animate-spin mx-auto text-emerald-500" />
-                  <p className="text-xs text-zinc-500">
-                    Consultando en tiempo real el router MikroTik (
-                    {activeContractDiag.node?.name})...
-                  </p>
-                </div>
-              ) : diagnosticResult ? (
-                <div className="space-y-4 text-xs">
-                  {/* Status Banner */}
-                  <div
-                    className={cn(
-                      "p-4 rounded-xl border flex items-center gap-3",
-                      diagnosticResult.sessionFound
-                        ? "bg-emerald-500/10 border-emerald-500/20 " +
-                            "text-emerald-700 dark:text-emerald-400"
-                        : "bg-rose-500/10 border-rose-500/20 " +
-                            "text-rose-700 dark:text-rose-400"
-                    )}
-                  >
-                    {diagnosticResult.sessionFound ? (
-                      <CheckCircle2 className="h-6 w-6 shrink-0" />
-                    ) : (
-                      <XCircle className="h-6 w-6 shrink-0" />
-                    )}
-                    <div>
-                      <h4 className="font-extrabold text-sm">
-                        {diagnosticResult.sessionFound
-                          ? "Enlace PPPoE Activo en MikroTik (ONLINE)"
-                          : "Sin Sesión Activa en MikroTik (OFFLINE)"}
-                      </h4>
-                      <p className="text-[11px] opacity-90 mt-0.5">
-                        {diagnosticResult.sessionFound
-                          ? "El router/ONU del cliente está sincronizado y transmitiendo tráfico."
-                          : diagnosticResult.secretFound
-                          ? "El secret existe en MikroTik pero no hay " +
-                            "sesión PPPoE activa en este momento."
-                          : "El usuario PPPoE no se encontró en /ppp/secret del router MikroTik."}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* MikroTik Live Telemetry Grid */}
-                  <div>
-                    <h5
-                      className={cn(
-                        "text-[11px] font-extrabold uppercase tracking-wider",
-                        "text-zinc-500 mb-2 flex items-center gap-1.5"
-                      )}
-                    >
-                      <Cpu className="h-3.5 w-3.5 text-emerald-500" />
-                      Telemetría en Vivo RouterOS (/ppp/active & /ppp/secret)
-                    </h5>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                      <div
-                        className={cn(
-                          "p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60",
-                          "border border-zinc-200 dark:border-zinc-800"
-                        )}
-                      >
-                        <span className="text-zinc-500 text-[10px]">
-                          Uptime Sesión:
-                        </span>
-                        <p className="font-bold text-zinc-900 dark:text-zinc-100 font-mono mt-0.5">
-                          {diagnosticResult.session?.uptime || "0s (Offline)"}
-                        </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60",
-                          "border border-zinc-200 dark:border-zinc-800"
-                        )}
-                      >
-                        <span className="text-zinc-500 text-[10px]">
-                          IP Remota (RouterOS):
-                        </span>
-                        <p className="font-bold text-zinc-900 dark:text-zinc-100 font-mono mt-0.5">
-                          {diagnosticResult.session?.address ||
-                            diagnosticResult.secretRemoteAddress ||
-                            activeContractDiag.ipAddress ||
-                            "N/D"}
-                        </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60",
-                          "border border-zinc-200 dark:border-zinc-800"
-                        )}
-                      >
-                        <span className="text-zinc-500 text-[10px]">
-                          MAC Caller-ID:
-                        </span>
-                        <p
-                          className={cn(
-                            "font-bold text-zinc-900 dark:text-zinc-100",
-                            "font-mono mt-0.5 truncate"
-                          )}
-                        >
-                          {diagnosticResult.session?.callerId ||
-                            diagnosticResult.lastCallerId ||
-                            activeContractDiag.equipment?.routerMac ||
-                            "N/D"}
-                        </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60",
-                          "border border-zinc-200 dark:border-zinc-800"
-                        )}
-                      >
-                        <span className="text-zinc-500 text-[10px]">
-                          Estado Secret PPP:
-                        </span>
-                        <p className="font-bold text-zinc-900 dark:text-zinc-100 mt-0.5">
-                          {diagnosticResult.secretFound
-                            ? diagnosticResult.secretDisabled
-                              ? "Deshabilitado (Suspendido)"
-                              : "Habilitado en Router"
-                            : "No registrado"}
-                        </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60",
-                          "border border-zinc-200 dark:border-zinc-800"
-                        )}
-                      >
-                        <span className="text-zinc-500 text-[10px]">
-                          Última Desconexión:
-                        </span>
-                        <p
-                          className={cn(
-                            "font-bold text-zinc-900 dark:text-zinc-100",
-                            "font-mono mt-0.5 truncate"
-                          )}
-                          title={diagnosticResult.lastDisconnectReason || ""}
-                        >
-                          {diagnosticResult.lastLoggedOut || "Sin registro"}
-                          {diagnosticResult.lastDisconnectReason
-                            ? ` (${diagnosticResult.lastDisconnectReason})`
-                            : ""}
-                        </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60",
-                          "border border-zinc-200 dark:border-zinc-800"
-                        )}
-                      >
-                        <span className="text-zinc-500 text-[10px]">
-                          Perfil en RouterOS:
-                        </span>
-                        <p
-                          className={cn(
-                            "font-bold text-emerald-600 dark:text-emerald-400",
-                            "font-mono mt-0.5 truncate"
-                          )}
-                          title={
-                            diagnosticResult.secretProfile ||
-                            activeContractDiag.plan?.name
-                          }
-                        >
-                          {diagnosticResult.secretProfile ||
-                            activeContractDiag.plan?.name ||
-                            "N/D"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+              <ContractExpressDiagnosticCard
+                contract={activeContractDiag}
+                diagnostic={diagnosticResult}
+                isLoading={diagLoading}
+                onRefresh={() => handleRunDiagnostic(activeContractDiag)}
+              />
 
               {/* Contracted Equipment (CPE Inventory) Section */}
               <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
@@ -2792,6 +2638,125 @@ function ContractsTableContent() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Promise Dialog */}
+      <Dialog
+        open={Boolean(promiseContract)}
+        onOpenChange={(open) => !open && setPromiseContract(null)}
+      >
+        <DialogContent className="rounded-2xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <CalendarClock className="h-5 w-5 text-emerald-600" />
+              {t("contracts.promiseModalTitle", "Conceder Prórroga de Pago")}
+            </DialogTitle>
+            <p className="text-xs text-zinc-500">
+              {t(
+                "contracts.promiseModalDesc",
+                "Reactiva el servicio temporalmente en MikroTik y genera ticket auditado."
+              )}
+            </p>
+          </DialogHeader>
+
+          {promiseContract && (
+            <div className="space-y-4 py-2">
+              <div className={cn(
+                "p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border",
+                "border-zinc-200 dark:border-zinc-700/60 text-xs space-y-1.5"
+              )}>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Contrato:</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    #{promiseContract.contractNumber}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Abonado / Titular:</span>
+                  <span
+                    className={cn(
+                      "font-semibold text-zinc-900 dark:text-zinc-100",
+                      "truncate max-w-[200px]"
+                    )}
+                  >
+                    {promiseContract.client?.fullName}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">PPPoE:</span>
+                  <span className="font-mono text-zinc-700 dark:text-zinc-300">
+                    {promiseContract.pppoeUser}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">
+                  {t("contracts.promiseHoursLabel", "Horas de Prórroga")}
+                </Label>
+                <Select
+                  value={String(promiseHours)}
+                  onValueChange={(val) => setPromiseHours(Number(val))}
+                >
+                  <SelectTrigger className="rounded-xl text-xs h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="24">24 Horas (1 Día - Estándar)</SelectItem>
+                    <SelectItem value="48">48 Horas (2 Días)</SelectItem>
+                    <SelectItem value="72">72 Horas (3 Días)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">
+                  {t(
+                    "contracts.promiseNotesLabel",
+                    "Observaciones / Justificación"
+                  )}
+                </Label>
+                <Input
+                  value={promiseNotes}
+                  onChange={(e) => setPromiseNotes(e.target.value)}
+                  placeholder="Ej. Promesa de pago acordada por WhatsApp."
+                  className="rounded-xl text-xs h-9"
+                  maxLength={250}
+                />
+              </div>
+            </div>
+          )}
+
+          <div
+            className={cn(
+              "flex items-center justify-end gap-2 pt-3",
+              "border-t border-zinc-100 dark:border-zinc-800"
+            )}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSubmittingPromise}
+              onClick={() => setPromiseContract(null)}
+              className="rounded-xl text-xs"
+            >
+              {t("common.cancel", "Cancelar")}
+            </Button>
+            <Button
+              type="button"
+              disabled={isSubmittingPromise}
+              onClick={handleConfirmPromise}
+              className={cn(
+                "bg-emerald-600 hover:bg-emerald-700 text-white",
+                "rounded-xl text-xs font-bold"
+              )}
+            >
+              {isSubmittingPromise
+                ? "Reactivando..."
+                : t("contracts.promiseSubmitBtn", "Conceder Prórroga Ahora")}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

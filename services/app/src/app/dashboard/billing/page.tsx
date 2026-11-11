@@ -17,6 +17,7 @@ import {
   CreditCard,
   CheckCircle2,
   Clock,
+  CalendarClock,
   Ban,
   Edit2,
   Trash2,
@@ -27,11 +28,9 @@ import {
   Power,
   PowerOff,
   User,
-  UploadCloud,
 } from "lucide-react";
 import { useBrand } from "@/context/brand-context";
 import { useTranslation } from "@/components/providers/i18n-provider";
-import { ReconciliationModal } from "@/components/billing/reconciliation-modal";
 import {
   getPaymentsPaginated,
   savePayment,
@@ -39,6 +38,7 @@ import {
   deletePayment,
   bulkTogglePaymentsStatus,
   bulkDeletePayments,
+  generateMonthlyInvoicesAction,
 } from "@/actions/billing";
 import { getContracts } from "@/actions/contracts";
 import type {
@@ -92,6 +92,7 @@ import {
 } from "@/components/ui/actions-dropdown";
 import { BulkActionsBar } from "@/components/ui/bulk-actions-bar";
 import { PaginationControl } from "@/components/ui/pagination-control";
+import { ContractSearchSelector } from "@/components/common/contract-search-selector";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -158,14 +159,20 @@ function BillingTableContent() {
 
   // Create / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [isReconcileModalOpen, setIsReconcileModalOpen] =
-    useState<boolean>(false);
   const [editingPayment, setEditingPayment] =
     useState<PaymentFormState>(DEFAULT_FORM);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Digital Receipt Preview Modal State
   const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
+
+  // Monthly Billing Cycle Modal State
+  const [isCycleModalOpen, setIsCycleModalOpen] = useState<boolean>(false);
+  const [cycleYear, setCycleYear] = useState<number>(new Date().getFullYear());
+  const [cycleMonth, setCycleMonth] = useState<number>(
+    new Date().getMonth() + 1
+  );
+  const [isGeneratingCycle, setIsGeneratingCycle] = useState<boolean>(false);
 
   // Delete Confirmation State
   const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
@@ -293,13 +300,8 @@ function BillingTableContent() {
   };
 
   const handleOpenCreateModal = async () => {
-    const list = await ensureContractsLoaded();
-    const firstContract = list[0];
-    setEditingPayment({
-      ...DEFAULT_FORM,
-      contractId: firstContract?.id || "",
-      amount: firstContract?.plan?.priceCop || 50000,
-    });
+    await ensureContractsLoaded();
+    setEditingPayment(DEFAULT_FORM);
     setIsModalOpen(true);
   };
 
@@ -446,6 +448,47 @@ function BillingTableContent() {
     }
   };
 
+  const handleGenerateMonthlyCycle = async () => {
+    if (!effectiveBrandId) {
+      toast.error(
+        t(
+          "billing.selectBrandNotice",
+          "Por favor selecciona una marca específica para facturar."
+        )
+      );
+      return;
+    }
+    setIsGeneratingCycle(true);
+    try {
+      const res = await generateMonthlyInvoicesAction({
+        brandId: effectiveBrandId,
+        year: cycleYear,
+        month: cycleMonth,
+      });
+      if (res.success && res.data) {
+        const formattedTotal = new Intl.NumberFormat("es-CO", {
+          style: "currency",
+          currency: "COP",
+          maximumFractionDigits: 0,
+        }).format(res.data.totalAmountCop);
+
+        toast.success(
+          `${t("billing.cycleSuccess", "Ciclo generado exitosamente.")} ` +
+            `${res.data.generatedCount} nuevas (${formattedTotal}), ` +
+            `${res.data.skippedCount} omitidas.`
+        );
+        setIsCycleModalOpen(false);
+        loadPaymentsData();
+      } else {
+        toast.error(res.error || "Error al generar el ciclo de facturación.");
+      }
+    } catch (_err) {
+      toast.error("Error al procesar el ciclo de facturación.");
+    } finally {
+      setIsGeneratingCycle(false);
+    }
+  };
+
   const buildPaymentRowActions = (payment: Payment): ActionDropdownItem[] => {
     const isApproved = payment.status === "APROBADO";
     return [
@@ -566,18 +609,19 @@ function BillingTableContent() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setIsReconcileModalOpen(true)}
+            onClick={() => setIsCycleModalOpen(true)}
             className={cn(
-              "rounded-xl gap-2 text-xs font-semibold border-zinc-200",
-              "dark:border-zinc-800 shadow-xs"
+              "rounded-xl gap-2 text-xs font-semibold border-emerald-500/30",
+              "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10",
+              "hover:bg-emerald-500/20 shadow-xs"
             )}
           >
-            <UploadCloud className="h-4 w-4 text-emerald-500" />
-            {t("billing.reconcileBtn", "Conciliar Archivo")}
+            <CalendarClock className="h-4 w-4" />
+            {t("billing.generateCycleBtn", "Generar Ciclo Mensual")}
           </Button>
 
           <Button
@@ -1539,37 +1583,30 @@ function BillingTableContent() {
           </DialogHeader>
 
           <form onSubmit={handleSavePayment} className="space-y-3.5 mt-2">
-            <div className="space-y-1">
-              <Label className="text-xs font-bold">
-                {t("billing.labelContract", "Contrato de Servicio *")}
-              </Label>
-              <Select
-                value={editingPayment.contractId}
-                onValueChange={(val) => {
-                  const selected = contractsList.find((c) => c.id === val);
-                  setEditingPayment({
-                    ...editingPayment,
-                    contractId: val,
-                    amount:
-                      !editingPayment.id && selected?.plan?.priceCop
-                        ? selected.plan.priceCop
-                        : editingPayment.amount,
-                  });
-                }}
-              >
-                <SelectTrigger className="h-10 rounded-xl text-xs">
-                  <SelectValue placeholder="Seleccionar contrato..." />
-                </SelectTrigger>
-                <SelectContent className="max-h-60 rounded-xl">
-                  {contractsList.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      #{c.contractNumber} — {c.client?.fullName} (
-                      {c.plan?.name})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <ContractSearchSelector
+              contracts={contractsList}
+              selectedContractId={editingPayment.contractId}
+              onSelect={(contract) => {
+                setEditingPayment((prev) => ({
+                  ...prev,
+                  contractId: contract?.id || "",
+                  amount:
+                    contract?.plan?.priceCop !== undefined
+                      ? contract.plan.priceCop
+                      : prev.amount,
+                }));
+              }}
+              onSearchServer={async (query) => {
+                const res = await getContracts({
+                  brandId: activeBrandId,
+                  search: query,
+                  pageSize: 10,
+                });
+                return res.success && res.data ? res.data.items : [];
+              }}
+              label={t("billing.labelContract", "Contrato de Servicio")}
+              required
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -1776,13 +1813,116 @@ function BillingTableContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Reconciliation Modal */}
-      <ReconciliationModal
-        isOpen={isReconcileModalOpen}
-        onClose={() => setIsReconcileModalOpen(false)}
-        brandId={effectiveBrandId}
-        onSuccess={loadPaymentsData}
-      />
+      {/* Monthly Billing Cycle Dialog */}
+      <Dialog open={isCycleModalOpen} onOpenChange={setIsCycleModalOpen}>
+        <DialogContent className="rounded-2xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold">
+              <CalendarClock className="h-5 w-5 text-emerald-600" />
+              {t("billing.cycleModalTitle", "Generación de Facturación Mensual")}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-zinc-500">
+              {t(
+                "billing.cycleModalDesc",
+                "Genera facturas en estado PENDIENTE para los contratos activos del periodo."
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div
+              className={cn(
+                "p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20",
+                "text-xs text-emerald-800 dark:text-emerald-300"
+              )}
+            >
+              {t(
+                "billing.cycleBrandNotice",
+                "Se procesarán contratos activos sin duplicar facturas ya existentes."
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">
+                  {t("billing.cycleMonthLabel", "Mes a Facturar")}
+                </Label>
+                <Select
+                  value={String(cycleMonth)}
+                  onValueChange={(val) => setCycleMonth(Number(val))}
+                >
+                  <SelectTrigger className="rounded-xl text-xs h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="1">01 - Enero</SelectItem>
+                    <SelectItem value="2">02 - Febrero</SelectItem>
+                    <SelectItem value="3">03 - Marzo</SelectItem>
+                    <SelectItem value="4">04 - Abril</SelectItem>
+                    <SelectItem value="5">05 - Mayo</SelectItem>
+                    <SelectItem value="6">06 - Junio</SelectItem>
+                    <SelectItem value="7">07 - Julio</SelectItem>
+                    <SelectItem value="8">08 - Agosto</SelectItem>
+                    <SelectItem value="9">09 - Septiembre</SelectItem>
+                    <SelectItem value="10">10 - Octubre</SelectItem>
+                    <SelectItem value="11">11 - Noviembre</SelectItem>
+                    <SelectItem value="12">12 - Diciembre</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">
+                  {t("billing.cycleYearLabel", "Año a Facturar")}
+                </Label>
+                <Select
+                  value={String(cycleYear)}
+                  onValueChange={(val) => setCycleYear(Number(val))}
+                >
+                  <SelectTrigger className="rounded-xl text-xs h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="2025">2025</SelectItem>
+                    <SelectItem value="2026">2026</SelectItem>
+                    <SelectItem value="2027">2027</SelectItem>
+                    <SelectItem value="2028">2028</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCycleModalOpen(false)}
+              className="rounded-xl text-xs"
+            >
+              {t("common.cancel", "Cancelar")}
+            </Button>
+            <Button
+              type="button"
+              disabled={isGeneratingCycle}
+              onClick={handleGenerateMonthlyCycle}
+              className={cn(
+                "bg-emerald-600 hover:bg-emerald-700 text-white",
+                "rounded-xl text-xs font-bold"
+              )}
+            >
+              {isGeneratingCycle ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                  Generando facturas...
+                </>
+              ) : (
+                t("billing.cycleSubmitBtn", "Generar Facturas Ahora")
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

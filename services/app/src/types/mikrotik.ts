@@ -52,6 +52,8 @@ export interface MikrotikActiveSession {
   radius?: boolean;
 }
 
+export type TrafficLightColor = "GREEN" | "YELLOW" | "RED";
+
 export interface MikrotikLiveDiagnostic {
   connected: boolean;
   targetHost: string;
@@ -67,4 +69,7 @@ export interface MikrotikLiveDiagnostic {
   lastDisconnectReason?: string | null;
   latencyMs?: number;
   error?: string | null;
+  trafficLight?: TrafficLightColor;
+  trafficSummary?: string;
+  trafficRecommendation?: string;
 }

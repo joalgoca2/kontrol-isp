@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   X,
+  Activity,
   Bot,
   AlertTriangle,
   CheckCircle2,
@@ -94,6 +95,10 @@ import {
 } from "@/components/ui/actions-dropdown";
 import { BulkActionsBar } from "@/components/ui/bulk-actions-bar";
 import { PaginationControl } from "@/components/ui/pagination-control";
+import { ContractSearchSelector } from "@/components/common/contract-search-selector";
+import {
+  ContractExpressDiagnosticModal,
+} from "@/components/common/contract-express-diagnostic";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -145,17 +150,9 @@ function TicketsTableContent() {
   // Selection State
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Auxiliary Contracts Search & Selection State for Create/Edit Modal
+  // Selected Contract for Create/Edit Modal
   const [selectedContractForModal, setSelectedContractForModal] =
     useState<Contract | null>(null);
-  const [contractSearchTerm, setContractSearchTerm] = useState<string>("");
-  const [isSearchingContracts, setIsSearchingContracts] =
-    useState<boolean>(false);
-  const [contractSearchResults, setContractSearchResults] = useState<
-    Contract[]
-  >([]);
-  const [hasSearchedContracts, setHasSearchedContracts] =
-    useState<boolean>(false);
 
   // Create / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -172,6 +169,11 @@ function TicketsTableContent() {
   const [ticketToDelete, setTicketToDelete] = useState<SupportTicket | null>(
     null
   );
+
+  // Express Diagnostic Modal State
+  const [selectedContractForDiag, setSelectedContractForDiag] =
+    useState<Contract | null>(null);
+  const [isDiagModalOpen, setIsDiagModalOpen] = useState<boolean>(false);
 
   const createQueryString = useCallback(
     (params: Record<string, string | number | null>) => {
@@ -283,58 +285,8 @@ function TicketsTableContent() {
     );
   }, [tickets, selectedIds]);
 
-  // Contract Search and Selection Handlers for Modal
-  const handleSearchContractsForModal = async () => {
-    if (!contractSearchTerm.trim()) {
-      return;
-    }
-    setIsSearchingContracts(true);
-    setHasSearchedContracts(true);
-    try {
-      const res = await getContracts({
-        brandId: activeBrandId,
-        search: contractSearchTerm.trim(),
-        pageSize: 10,
-      });
-      if (res.success && res.data) {
-        setContractSearchResults(res.data.items);
-      } else {
-        setContractSearchResults([]);
-      }
-    } catch (_err) {
-      setContractSearchResults([]);
-      toast.error("Error al buscar contratos.");
-    } finally {
-      setIsSearchingContracts(false);
-    }
-  };
-
-  const handleSelectContract = (contract: Contract) => {
-    setSelectedContractForModal(contract);
-    setEditingTicket((prev) => ({
-      ...prev,
-      contractId: contract.id,
-    }));
-    setContractSearchResults([]);
-    setHasSearchedContracts(false);
-  };
-
-  const handleClearSelectedContract = () => {
-    setSelectedContractForModal(null);
-    setEditingTicket((prev) => ({
-      ...prev,
-      contractId: "",
-    }));
-    setContractSearchResults([]);
-    setHasSearchedContracts(false);
-    setContractSearchTerm("");
-  };
-
   const handleOpenCreateModal = () => {
     setSelectedContractForModal(null);
-    setContractSearchTerm("");
-    setContractSearchResults([]);
-    setHasSearchedContracts(false);
     setEditingTicket(DEFAULT_FORM);
     setIsModalOpen(true);
   };
@@ -347,9 +299,6 @@ function TicketsTableContent() {
     } else {
       setSelectedContractForModal(null);
     }
-    setContractSearchTerm("");
-    setContractSearchResults([]);
-    setHasSearchedContracts(false);
     setEditingTicket({
       id: ticket.id,
       contractId: ticket.contractId,
@@ -513,6 +462,24 @@ function TicketsTableContent() {
         icon: Edit2,
         onClick: () => handleOpenEditModal(ticket),
       },
+      ...(ticket.contract
+        ? [
+            {
+              label: t(
+                "tickets.actionDiagnostic",
+                "Diagnóstico Express (Semáforo)"
+              ),
+              icon: Activity,
+              variant: "emerald" as const,
+              onClick: () => {
+                setSelectedContractForDiag(
+                  ticket.contract as unknown as Contract
+                );
+                setIsDiagModalOpen(true);
+              },
+            },
+          ]
+        : []),
       {
         label: isResolved
           ? t("tickets.actionReopen", "Reabrir Caso")
@@ -833,7 +800,12 @@ function TicketsTableContent() {
                 )}
               </p>
             </div>
-            <div className="p-2.5 sm:p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <div
+              className={cn(
+                "p-2.5 sm:p-3 rounded-xl bg-amber-500/10",
+                "text-amber-600 dark:text-amber-400"
+              )}
+            >
               <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
@@ -1652,216 +1624,27 @@ function TicketsTableContent() {
           </DialogHeader>
 
           <form onSubmit={handleSaveTicket} className="space-y-3.5 mt-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-bold flex items-center justify-between">
-                <span>
-                  {t("tickets.labelContract", "Contrato de Servicio *")}
-                </span>
-                {selectedContractForModal && (
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                    Abonado seleccionado
-                  </span>
-                )}
-              </Label>
-
-              {selectedContractForModal ? (
-                /* Selected Contract Confirmation Card */
-                <div className="p-3 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30 flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5 min-w-0">
-                    <div className="h-8 w-8 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <User className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 space-y-0.5 text-xs">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-zinc-900 dark:text-white truncate">
-                          {selectedContractForModal.client?.fullName ||
-                            "Cliente sin nombre"}
-                        </span>
-                        {selectedContractForModal.client?.clientCode && (
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] py-0 px-1.5 font-mono text-emerald-600 bg-emerald-500/10"
-                          >
-                            ID: #{selectedContractForModal.client.clientCode}
-                          </Badge>
-                        )}
-                        {selectedContractForModal.client?.documentNumber && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] py-0 px-1.5 font-mono"
-                          >
-                            CC: {selectedContractForModal.client.documentNumber}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
-                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                          #{selectedContractForModal.contractNumber}
-                        </span>
-                        {selectedContractForModal.pppoeUser && (
-                          <>
-                            <span>&bull;</span>
-                            <span className="font-mono">
-                              {selectedContractForModal.pppoeUser}
-                            </span>
-                          </>
-                        )}
-                        {selectedContractForModal.plan?.name && (
-                          <>
-                            <span>&bull;</span>
-                            <span>{selectedContractForModal.plan.name}</span>
-                          </>
-                        )}
-                      </div>
-                      {selectedContractForModal.address && (
-                        <p className="text-[11px] text-zinc-500 truncate">
-                          {selectedContractForModal.address}
-                          {selectedContractForModal.node?.name
-                            ? ` (${selectedContractForModal.node.name})`
-                            : ""}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleClearSelectedContract}
-                    className="h-7 text-xs text-zinc-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-500/10 rounded-lg px-2 shrink-0"
-                    title="Cambiar o buscar otro abonado"
-                  >
-                    <X className="h-3.5 w-3.5 mr-1" />
-                    Cambiar
-                  </Button>
-                </div>
-              ) : (
-                /* Search Box & Results List */
-                <div className="space-y-2">
-                  <div className="flex gap-1.5">
-                    <div className="relative flex-1">
-                      <Search className="h-3.5 w-3.5 text-zinc-400 absolute left-3 top-2.5" />
-                      <Input
-                        value={contractSearchTerm}
-                        onChange={(e) =>
-                          setContractSearchTerm(e.target.value)
-                        }
-                        placeholder="Buscar por nombre, cédula, # contrato o PPPoE..."
-                        className="h-8 pl-8 pr-7 rounded-xl text-xs"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleSearchContractsForModal();
-                          }
-                        }}
-                      />
-                      {contractSearchTerm && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setContractSearchTerm("");
-                            setContractSearchResults([]);
-                            setHasSearchedContracts(false);
-                          }}
-                          className="absolute right-2 top-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        isSearchingContracts || !contractSearchTerm.trim()
-                      }
-                      onClick={handleSearchContractsForModal}
-                      className="h-8 rounded-xl text-xs px-3 shrink-0"
-                    >
-                      {isSearchingContracts ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <>
-                          <Search className="h-3.5 w-3.5 mr-1" />
-                          Buscar
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Search Results Dropdown / Panel */}
-                  {contractSearchResults.length > 0 && (
-                    <div className="max-h-52 overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {contractSearchResults.map((c) => (
-                        <div
-                          key={c.id}
-                          onClick={() => handleSelectContract(c)}
-                          className="p-2.5 hover:bg-emerald-500/10 dark:hover:bg-emerald-500/15 cursor-pointer transition-colors flex items-center justify-between gap-3 text-xs"
-                        >
-                          <div className="min-w-0 space-y-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {c.client?.clientCode && (
-                                <span className="text-[10px] text-emerald-600 font-mono font-bold">
-                                  #{c.client.clientCode} &bull;
-                                </span>
-                              )}
-                              <span className="font-bold text-zinc-800 dark:text-zinc-200 truncate">
-                                {c.client?.fullName || "Abonado"}
-                              </span>
-                              {c.client?.documentNumber && (
-                                <span className="text-[10px] text-zinc-500 font-mono">
-                                  (CC: {c.client.documentNumber})
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                                #{c.contractNumber}
-                              </span>
-                              {c.pppoeUser && (
-                                <>
-                                  <span>&bull;</span>
-                                  <span className="font-mono">
-                                    {c.pppoeUser}
-                                  </span>
-                                </>
-                              )}
-                              {c.address && (
-                                <>
-                                  <span>&bull;</span>
-                                  <span className="truncate max-w-[180px]">
-                                    {c.address}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-xs px-2 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 shrink-0 font-semibold"
-                          >
-                            Seleccionar
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {hasSearchedContracts &&
-                    !isSearchingContracts &&
-                    contractSearchResults.length === 0 && (
-                      <p className="text-[11px] text-amber-600 dark:text-amber-400 p-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                        No se encontraron abonados con &quot;
-                        {contractSearchTerm}&quot;. Prueba con el nombre,
-                        cédula o usuario PPPoE.
-                      </p>
-                    )}
-                </div>
-              )}
-            </div>
+            <ContractSearchSelector
+              selectedContract={selectedContractForModal}
+              showDiagnostic={true}
+              onSelect={(contract) => {
+                setSelectedContractForModal(contract);
+                setEditingTicket((prev) => ({
+                  ...prev,
+                  contractId: contract?.id || "",
+                }));
+              }}
+              onSearchServer={async (query) => {
+                const res = await getContracts({
+                  brandId: activeBrandId,
+                  search: query,
+                  pageSize: 10,
+                });
+                return res.success && res.data ? res.data.items : [];
+              }}
+              label={t("tickets.labelContract", "Contrato de Servicio")}
+              required
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -2082,6 +1865,13 @@ function TicketsTableContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Express Traffic Light Diagnostic Modal */}
+      <ContractExpressDiagnosticModal
+        contract={selectedContractForDiag}
+        open={isDiagModalOpen}
+        onOpenChange={setIsDiagModalOpen}
+      />
     </div>
   );
 }

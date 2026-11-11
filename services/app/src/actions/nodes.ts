@@ -359,6 +359,14 @@ export async function testNodeHealthAction(
       },
     });
 
+    if (!health.connected) {
+      return {
+        success: false,
+        error:
+          health.error || "No se pudo establecer conexión con el nodo MikroTik.",
+      };
+    }
+
     return {
       success: true,
       data: {
@@ -368,7 +376,8 @@ export async function testNodeHealthAction(
       },
     };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Error al probar nodo.";
+    const message =
+      err instanceof Error ? err.message : "Error al probar nodo.";
     return { success: false, error: message };
   }
 }
