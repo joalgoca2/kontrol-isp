@@ -17,9 +17,22 @@ export function Header() {
   const userRoles = user?.roles ?? [];
   const isAdmin = userRoles.includes("SUPER_ADMIN") || userRoles.includes("ADMIN");
 
-  const displayName = user?.name || user?.email?.split("@")[0] || t("nav.user", "Usuario");
+  const displayName =
+    user?.name || user?.email?.split("@")[0] || t("nav.user", "Usuario");
   const initial = displayName[0]?.toUpperCase() ?? "U";
-  const roleBadgeText = isAdmin ? t("nav.roleAdmin", "Admin") : t("nav.roleUser", "Usuario");
+
+  let roleBadgeText = t("nav.roleUser", "Usuario");
+  if (userRoles.includes("SUPER_ADMIN")) {
+    roleBadgeText = t("nav.roleSuperAdmin", "SuperAdmin");
+  } else if (userRoles.includes("ADMIN")) {
+    roleBadgeText = t("nav.roleAdmin", "Admin");
+  } else if (userRoles.includes("TECHNICIAN")) {
+    roleBadgeText = t("nav.roleTechnician", "Técnico");
+  } else if (userRoles.includes("BILLING")) {
+    roleBadgeText = t("nav.roleBilling", "Facturación");
+  } else if (userRoles.includes("SUPPORT")) {
+    roleBadgeText = t("nav.roleSupport", "Soporte");
+  }
 
   return (
     <header

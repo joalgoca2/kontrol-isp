@@ -1052,6 +1052,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-name"
+                    maxLength={100}
                     placeholder={t(
                       "brands.fieldNamePlaceholder",
                       "ej. Serkoi Telecom"
@@ -1072,6 +1073,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-slug"
+                    maxLength={50}
                     placeholder={t("brands.fieldSlugPlaceholder", "ej. serkoi")}
                     className={cn(
                       "rounded-xl text-xs h-9 font-mono lowercase",
@@ -1094,6 +1096,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-legal"
+                    maxLength={150}
                     placeholder={t(
                       "brands.fieldLegalNamePlaceholder",
                       "ej. SERKOI S.A.S."
@@ -1114,6 +1117,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-tax"
+                    maxLength={50}
                     placeholder={t(
                       "brands.fieldTaxIdPlaceholder",
                       "ej. 901234567-1"
@@ -1135,6 +1139,7 @@ function BrandsTableContent() {
                 </Label>
                 <Input
                   id="brand-logo"
+                  maxLength={255}
                   placeholder={t(
                     "brands.fieldLogoPlaceholder",
                     "https://misitio.com/logo.png"
@@ -1191,6 +1196,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-timezone"
+                    maxLength={50}
                     placeholder="America/Bogota"
                     className="rounded-xl text-xs h-9 font-mono"
                     {...register("timezone")}
@@ -1314,6 +1320,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-billing-webhook"
+                    maxLength={255}
                     placeholder={t(
                       "brands.fieldBillingWebhookPlaceholder",
                       "https://n8n.ejemplo.com/webhook/billing"
@@ -1337,6 +1344,7 @@ function BrandsTableContent() {
                   </Label>
                   <Input
                     id="brand-general-webhook"
+                    maxLength={255}
                     placeholder={t(
                       "brands.fieldGeneralWebhookPlaceholder",
                       "https://n8n.ejemplo.com/webhook/events"

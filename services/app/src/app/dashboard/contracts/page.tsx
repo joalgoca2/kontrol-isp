@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Network,
   Activity,
@@ -23,10 +24,16 @@ import {
   Router,
   MapPin,
   CalendarClock,
+  ClipboardCheck,
+  Link2,
+  MessageCircle,
+  Phone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "@/components/providers/i18n-provider";
 import { useBrand } from "@/context/brand-context";
+import { hasPermission } from "@/lib/permissions";
+import { useIsMobile } from "@/lib/use-mobile";
 import {
   getContractsPaginated,
   saveContract,
@@ -38,6 +45,7 @@ import {
   bulkDeleteContracts,
 } from "@/actions/contracts";
 import { grantContractPromiseAction } from "@/actions/billing";
+import { getContractPaymentLinkAction } from "@/actions/portal";
 import { getMikrotikNodes } from "@/actions/nodes";
 import { getPlans } from "@/actions/plans";
 import { getClients } from "@/actions/clients";
@@ -92,6 +100,7 @@ import { ClientSearchSelector } from "@/components/common/client-search-selector
 import {
   ContractExpressDiagnosticCard,
 } from "@/components/common/contract-express-diagnostic";
+import { ContractAuditModal } from "@/components/contracts/contract-audit-modal";
 import {
   ActionsDropdown,
   type ActionDropdownItem,
@@ -215,8 +224,25 @@ function ContractsTableContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const { t } = useTranslation();
   const { activeBrandId, activeBrand } = useBrand();
+
+  const userRoles = session?.user?.roles ?? [];
+  const isAdmin =
+    userRoles.includes("SUPER_ADMIN") || userRoles.includes("ADMIN");
+  const canManageContracts = hasPermission(
+    session?.user,
+    "contracts:manage"
+  );
+  const canDeleteContracts = hasPermission(
+    session?.user,
+    "contracts:delete"
+  );
+  const canManageBilling = hasPermission(
+    session?.user,
+    "billing:manage"
+  );
 
   const currentPage = Math.max(
     1,
@@ -224,10 +250,12 @@ function ContractsTableContent() {
   );
   const currentSearch = searchParams.get("search") ?? "";
   const currentNode = searchParams.get("node") ?? "all";
-  const currentStatus = searchParams.get("status") ?? "all";
+  const currentStatus = searchParams.get("status") ?? "ACTIVO";
   const currentTech = searchParams.get("technology") ?? "all";
+  const isMobile = useIsMobile();
+  const rawView = searchParams.get("view");
   const currentView = (
-    searchParams.get("view") === "grid" ? "grid" : "list"
+    rawView ?? (isMobile ? "grid" : "list")
   ) as "list" | "grid";
 
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -246,6 +274,9 @@ function ContractsTableContent() {
   const [selectedContractIds, setSelectedContractIds] = useState<string[]>(
     []
   );
+
+  // Audit Modal State
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState<boolean>(false);
 
   // Create / Edit Modal State
   const [isDialogOpen, setIsDialogOpen] = useState<boolean>(false);
@@ -271,6 +302,8 @@ function ContractsTableContent() {
   const [promiseContract, setPromiseContract] = useState<Contract | null>(null);
   const [promiseHours, setPromiseHours] = useState<number>(24);
   const [promiseNotes, setPromiseNotes] = useState<string>("");
+  const [promiseOverrideLimit, setPromiseOverrideLimit] =
+    useState<boolean>(false);
   const [isSubmittingPromise, setIsSubmittingPromise] =
     useState<boolean>(false);
 
@@ -278,6 +311,7 @@ function ContractsTableContent() {
     setPromiseContract(contract);
     setPromiseHours(24);
     setPromiseNotes("");
+    setPromiseOverrideLimit(false);
   };
 
   const handleConfirmPromise = async () => {
@@ -288,6 +322,7 @@ function ContractsTableContent() {
         contractId: promiseContract.id,
         hours: promiseHours,
         notes: promiseNotes.trim() || undefined,
+        overrideLimit: promiseOverrideLimit,
       });
       if (res.success && res.data) {
         toast.success(
@@ -303,6 +338,48 @@ function ContractsTableContent() {
       toast.error("Error al otorgar la prórroga.");
     } finally {
       setIsSubmittingPromise(false);
+    }
+  };
+
+  const handleCopyPaymentLink = async (contractId: string) => {
+    try {
+      const res = await getContractPaymentLinkAction(contractId);
+      if (res.success && res.data?.url) {
+        await navigator.clipboard.writeText(res.data.url);
+        toast.success(
+          t(
+            "contracts.paymentLinkCopied",
+            "Link Mágico de Pago copiado al portapapeles."
+          )
+        );
+      } else {
+        toast.error(res.error || "No se pudo generar el enlace de pago.");
+      }
+    } catch {
+      toast.error("Error al copiar el enlace de pago.");
+    }
+  };
+
+  const handleSendPaymentLinkWhatsApp = async (contract: Contract) => {
+    try {
+      const res = await getContractPaymentLinkAction(contract.id);
+      if (res.success && res.data?.url) {
+        const phone =
+          contract.client?.phonePrimary?.replace(/\D/g, "") || "";
+        const clientName = contract.client?.fullName || "Abonado";
+        const message =
+          `Hola ${clientName}, te compartimos tu enlace de pago sin ` +
+          `contraseñas para tu servicio de internet: ${res.data.url}`;
+        const cleanPhone = phone.startsWith("57") ? phone.slice(2) : phone;
+        const waUrl = phone
+          ? `https://wa.me/57${cleanPhone}?text=${encodeURIComponent(message)}`
+          : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+        window.open(waUrl, "_blank");
+      } else {
+        toast.error(res.error || "No se pudo generar el enlace de pago.");
+      }
+    } catch {
+      toast.error("Error al abrir WhatsApp.");
     }
   };
 
@@ -346,11 +423,7 @@ function ContractsTableContent() {
       }
 
       if (updates.status !== undefined) {
-        if (
-          updates.status === "all" ||
-          updates.status === "ALL" ||
-          !updates.status
-        ) {
+        if (!updates.status) {
           params.delete("status");
         } else {
           params.set("status", updates.status);
@@ -366,7 +439,7 @@ function ContractsTableContent() {
       }
 
       if (updates.view !== undefined) {
-        if (updates.view === "list") {
+        if (!updates.view) {
           params.delete("view");
         } else {
           params.set("view", updates.view);
@@ -835,22 +908,40 @@ function ContractsTableContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleOpenCreate}
-            className={cn(
-              "rounded-xl gap-2 text-xs font-semibold bg-emerald-600",
-              "hover:bg-emerald-700 text-white shadow-xs"
-            )}
-          >
-            <Plus className="h-4 w-4" />
-            {t("contracts.newContract", "Nuevo Contrato")}
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAuditModalOpen(true)}
+              className={cn(
+                "rounded-xl gap-2 text-xs font-semibold border-emerald-500/30",
+                "hover:border-emerald-500/60 hover:bg-emerald-500/10",
+                "text-emerald-600 dark:text-emerald-400"
+              )}
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              {t("contracts.auditButton", "Auditar vs MikroTik")}
+            </Button>
+          )}
+
+          {canManageContracts && (
+            <Button
+              size="sm"
+              onClick={handleOpenCreate}
+              className={cn(
+                "rounded-xl gap-2 text-xs font-semibold bg-emerald-600",
+                "hover:bg-emerald-700 text-white shadow-xs"
+              )}
+            >
+              <Plus className="h-4 w-4" />
+              {t("contracts.newContract", "Nuevo Contrato")}
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Filter Metric Cards Standard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Total Contratos */}
         <Card
           onClick={() =>
@@ -866,30 +957,44 @@ function ContractsTableContent() {
             isTotalCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-zinc-500 dark:text-zinc-400",
-                  "uppercase tracking-wider"
+                  "text-[10px] sm:text-xs font-bold text-zinc-500",
+                  "dark:text-zinc-400 uppercase tracking-wider"
                 )}
               >
                 {t("contracts.cardTotalTitle", "Total de Contratos")}
               </p>
-              <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : total}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-zinc-900",
+                  "dark:text-white"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  total
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("contracts.cardTotalDesc", "Enlaces registrados en red")}
               </p>
             </div>
             <div
               className={cn(
-                "p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800",
-                "text-zinc-600 dark:text-zinc-300"
+                "p-2 sm:p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800",
+                "text-zinc-600 dark:text-zinc-300 shrink-0"
               )}
             >
-              <Network className="h-5 w-5" />
+              <Network className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
@@ -907,30 +1012,44 @@ function ContractsTableContent() {
             isActiveCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-emerald-600",
+                  "text-[10px] sm:text-xs font-bold text-emerald-600",
                   "dark:text-emerald-400 uppercase tracking-wider"
                 )}
               >
                 {t("contracts.cardActiveTitle", "Enlaces Activos")}
               </p>
-              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : activeCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-emerald-600",
+                  "dark:text-emerald-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  activeCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("contracts.cardActiveDesc", "Suscripciones al día")}
               </p>
             </div>
             <div
               className={cn(
-                "p-3 rounded-xl bg-emerald-500/10",
-                "text-emerald-600 dark:text-emerald-400"
+                "p-2 sm:p-3 rounded-xl bg-emerald-500/10",
+                "text-emerald-600 dark:text-emerald-400 shrink-0"
               )}
             >
-              <CheckCircle2 className="h-5 w-5" />
+              <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
@@ -948,25 +1067,44 @@ function ContractsTableContent() {
             isWarningCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-amber-600",
+                  "text-[10px] sm:text-xs font-bold text-amber-600",
                   "dark:text-amber-400 uppercase tracking-wider"
                 )}
               >
                 {t("contracts.cardWarningTitle", "Aviso Vencimiento")}
               </p>
-              <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : warningCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-amber-600",
+                  "dark:text-amber-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  warningCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("contracts.cardWarningDesc", "Próximos a fecha de corte")}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="h-5 w-5" />
+            <div
+              className={cn(
+                "p-2 sm:p-3 rounded-xl bg-amber-500/10 text-amber-600",
+                "dark:text-amber-400 shrink-0"
+              )}
+            >
+              <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
@@ -984,216 +1122,250 @@ function ContractsTableContent() {
             isSuspendedCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-rose-500 uppercase tracking-wider">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-xs font-bold text-rose-500",
+                  "uppercase tracking-wider"
+                )}
+              >
                 {t("contracts.cardSuspendedTitle", "Suspendidos Mora")}
               </p>
-              <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400">
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-rose-600",
+                  "dark:text-rose-400"
+                )}
+              >
                 {isLoading ? (
-                  <Skeleton className="h-8 w-14" />
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
                 ) : (
                   suspendedCount
                 )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("contracts.cardSuspendedDesc", "Cortados en RouterOS")}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-rose-500/10 text-rose-500">
-              <PowerOff className="h-5 w-5" />
+            <div
+              className={cn(
+                "p-2 sm:p-3 rounded-xl bg-rose-500/10 text-rose-500",
+                "shrink-0"
+              )}
+            >
+              <PowerOff className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Filter and Search Bar with View Switcher */}
-      <div
-        className={cn(
-          "flex flex-col md:flex-row gap-3 items-stretch",
-          "md:items-center justify-between"
-        )}
-      >
-        <form onSubmit={handleSearchSubmit} className="relative flex-1">
-          <button
-            type="submit"
-            aria-label={t("common.search", "Buscar")}
-            className={cn(
-              "absolute left-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md",
-              "text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400",
-              "transition-colors cursor-pointer"
-            )}
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder={t(
-              "contracts.searchPlaceholder",
-              "Buscar por contrato (ej. SER-1042), PPPoE, titular o IP..."
-            )}
-            className={cn(
-              "pl-9 pr-9 rounded-xl text-xs h-10 border-zinc-200",
-              "dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
-            )}
-          />
-          {searchInput && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className={cn(
-                "absolute right-3 top-1/2 -translate-y-1/2",
-                "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-              )}
-            >
-              <X className="h-4 w-4" />
-            </button>
+      <div className="space-y-2.5">
+        <div
+          className={cn(
+            "flex flex-col lg:flex-row gap-2.5 items-stretch",
+            "lg:items-center justify-between"
           )}
-        </form>
-
-        <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-          {/* Node Filter */}
-          <Select
-            value={currentNode}
-            onValueChange={(val) => updateUrlParams({ node: val, page: 1 })}
-          >
-            <SelectTrigger
-              className={cn(
-                "w-full sm:w-44 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
-              )}
-            >
-              <SelectValue
+        >
+          {/* Search Bar + View Mode Switcher */}
+          <div className="flex items-center gap-2 flex-1">
+            <form onSubmit={handleSearchSubmit} className="relative flex-1">
+              <button
+                type="submit"
+                aria-label={t("common.search", "Buscar")}
+                className={cn(
+                  "absolute left-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md",
+                  "text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400",
+                  "transition-colors cursor-pointer"
+                )}
+              >
+                <Search className="h-4 w-4" />
+              </button>
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder={t(
-                  "contracts.filterNodesAll",
-                  "Todos los Nodos"
+                  "contracts.searchPlaceholder",
+                  "Buscar por contrato (ej. SER-1042), PPPoE, titular o IP..."
+                )}
+                className={cn(
+                  "pl-9 pr-9 rounded-xl text-xs h-10 border-zinc-200",
+                  "dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
                 )}
               />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("contracts.filterNodesAll", "Todos los Nodos")}
-              </SelectItem>
-              {nodes.map((n) => (
-                <SelectItem key={n.id} value={n.id}>
-                  {n.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className={cn(
+                    "absolute right-3 top-1/2 -translate-y-1/2",
+                    "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                  )}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </form>
 
-          {/* Status Filter */}
-          <Select
-            value={currentStatus}
-            onValueChange={(val) => updateUrlParams({ status: val, page: 1 })}
-          >
-            <SelectTrigger
+            {/* View Mode Switcher: List vs Grid */}
+            <div
               className={cn(
-                "w-full sm:w-40 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
+                "flex items-center p-1 rounded-xl bg-zinc-100 shrink-0",
+                "dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
               )}
             >
-              <SelectValue
-                placeholder={t(
-                  "contracts.filterStatusAll",
-                  "Todos los Estados"
+              <button
+                type="button"
+                onClick={() => updateUrlParams({ view: "list" })}
+                title={t("contracts.viewList", "Vista Lista")}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
+                  currentView === "list"
+                    ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
+                        "dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
                 )}
-              />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("contracts.filterStatusAll", "Todos los Estados")}
-              </SelectItem>
-              <SelectItem value="ACTIVO">
-                {t("contracts.filterActive", "Activos (Al Día)")}
-              </SelectItem>
-              <SelectItem value="AVISO_VENCIMIENTO">
-                {t("contracts.filterWarning", "Aviso Vencimiento")}
-              </SelectItem>
-              <SelectItem value="SUSPENDIDO_MORA">
-                {t("contracts.filterSuspended", "Suspendidos Mora")}
-              </SelectItem>
-              <SelectItem value="CORTESIA">
-                {t("contracts.filterCourtesy", "Cortesía")}
-              </SelectItem>
-              <SelectItem value="RETIRADO">
-                {t("contracts.filterRetired", "Retirados")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Technology Filter */}
-          <Select
-            value={currentTech}
-            onValueChange={(val) =>
-              updateUrlParams({ technology: val, page: 1 })
-            }
-          >
-            <SelectTrigger
-              className={cn(
-                "w-full sm:w-40 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
-              )}
-            >
-              <SelectValue
-                placeholder={t(
-                  "contracts.filterTechAll",
-                  "Todas las Tecnologías"
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateUrlParams({ view: "grid" })}
+                title={t("contracts.viewGrid", "Vista Tarjetas")}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
+                  currentView === "grid"
+                    ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
+                        "dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
                 )}
-              />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("contracts.filterTechAll", "Todas las Tecnologías")}
-              </SelectItem>
-              <SelectItem value="FIBRA_OPTICA">
-                {t("contracts.filterFiber", "Fibra Óptica")}
-              </SelectItem>
-              <SelectItem value="MICROONDAS">
-                {t("contracts.filterWireless", "Microondas")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
 
-          {/* View Mode Switcher: List vs Grid */}
-          <div
-            className={cn(
-              "flex items-center p-1 rounded-xl bg-zinc-100",
-              "dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => updateUrlParams({ view: "list" })}
-              title={t("contracts.viewList", "Vista Lista")}
-              className={cn(
-                "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
-                currentView === "list"
-                  ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
-                      "dark:text-emerald-400 shadow-xs font-bold"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              )}
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => updateUrlParams({ view: "grid" })}
-              title={t("contracts.viewGrid", "Vista Tarjetas")}
-              className={cn(
-                "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
-                currentView === "grid"
-                  ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
-                      "dark:text-emerald-400 shadow-xs font-bold"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              )}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
+          {/* Select Dropdown Filters */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-center">
+            {/* Node Filter */}
+            <div className="w-full sm:w-44">
+              <Select
+                value={currentNode}
+                onValueChange={(val) => updateUrlParams({ node: val, page: 1 })}
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "contracts.filterNodesAll",
+                      "Todos los Nodos"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("contracts.filterNodesAll", "Todos los Nodos")}
+                  </SelectItem>
+                  {nodes.map((n) => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {n.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="w-full sm:w-40">
+              <Select
+                value={currentStatus}
+                onValueChange={(val) =>
+                  updateUrlParams({ status: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "contracts.filterStatusAll",
+                      "Todos los Estados"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("contracts.filterStatusAll", "Todos los Estados")}
+                  </SelectItem>
+                  <SelectItem value="ACTIVO">
+                    {t("contracts.filterActive", "Activos (Al Día)")}
+                  </SelectItem>
+                  <SelectItem value="AVISO_VENCIMIENTO">
+                    {t("contracts.filterWarning", "Aviso Vencimiento")}
+                  </SelectItem>
+                  <SelectItem value="SUSPENDIDO_MORA">
+                    {t("contracts.filterSuspended", "Suspendidos Mora")}
+                  </SelectItem>
+                  <SelectItem value="CORTESIA">
+                    {t("contracts.filterCourtesy", "Cortesía")}
+                  </SelectItem>
+                  <SelectItem value="RETIRADO">
+                    {t("contracts.filterRetired", "Retirados")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Technology Filter */}
+            <div className="col-span-2 sm:col-span-1 w-full sm:w-40">
+              <Select
+                value={currentTech}
+                onValueChange={(val) =>
+                  updateUrlParams({ technology: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "contracts.filterTechAll",
+                      "Todas las Tecnologías"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("contracts.filterTechAll", "Todas las Tecnologías")}
+                  </SelectItem>
+                  <SelectItem value="FIBRA_OPTICA">
+                    {t("contracts.filterFiber", "Fibra Óptica")}
+                  </SelectItem>
+                  <SelectItem value="MICROONDAS">
+                    {t("contracts.filterWireless", "Microondas")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>
@@ -1351,35 +1523,75 @@ function ContractsTableContent() {
                     },
                     {
                       label: t(
-                        "contracts.actionPromise",
-                        "Conceder Prórroga de Pago"
+                        "contracts.actionCopyPaymentLink",
+                        "Copiar Link de Pago"
                       ),
-                      icon: CalendarClock,
-                      onClick: () => handleOpenPromiseModal(c),
+                      icon: Link2,
+                      onClick: () => handleCopyPaymentLink(c.id),
                     },
                     {
-                      label: t("contracts.actionEdit", "Editar Contrato"),
-                      icon: Edit2,
-                      onClick: () => handleOpenEdit(c),
+                      label: t(
+                        "contracts.actionSendPaymentLink",
+                        "Enviar Link por WhatsApp"
+                      ),
+                      icon: MessageCircle,
+                      onClick: () => handleSendPaymentLinkWhatsApp(c),
                     },
-                    {
-                      label: isSuspended
-                        ? t("contracts.actionReactivate", "Reactivar Servicio")
-                        : t(
-                            "contracts.actionSuspend",
-                            "Suspender por Mora (Cortar)"
-                          ),
-                      icon: isSuspended ? Power : PowerOff,
-                      variant: isSuspended ? "emerald" : "default",
-                      onClick: () => handleToggleSuspension(c, !isSuspended),
-                    },
-                    {
-                      label: t("contracts.actionDelete", "Eliminar Contrato"),
-                      icon: Trash2,
-                      variant: "destructive",
-                      onClick: () => setDeletingContractId(c.id),
-                      disabled: hasHistory,
-                    },
+                    ...(canManageBilling
+                      ? [
+                          {
+                            label: t(
+                              "contracts.actionPromise",
+                              "Conceder Prórroga de Pago"
+                            ),
+                            icon: CalendarClock,
+                            onClick: () => handleOpenPromiseModal(c),
+                          },
+                        ]
+                      : []),
+                    ...(canManageContracts
+                      ? [
+                          {
+                            label: t(
+                              "contracts.actionEdit",
+                              "Editar Contrato"
+                            ),
+                            icon: Edit2,
+                            onClick: () => handleOpenEdit(c),
+                          },
+                          {
+                            label: isSuspended
+                              ? t(
+                                  "contracts.actionReactivate",
+                                  "Reactivar Servicio"
+                                )
+                              : t(
+                                  "contracts.actionSuspend",
+                                  "Suspender por Mora (Cortar)"
+                                ),
+                            icon: isSuspended ? Power : PowerOff,
+                            variant: (isSuspended ? "emerald" : "default") as
+                              | "emerald"
+                              | "default",
+                            onClick: () =>
+                              handleToggleSuspension(c, !isSuspended),
+                          },
+                        ]
+                      : []),
+                    ...(canDeleteContracts
+                      ? [
+                          {
+                            label: t(
+                              "contracts.actionDelete",
+                              "Eliminar Contrato"
+                            ),
+                            icon: Trash2,
+                            variant: "destructive" as const,
+                            onClick: () => setDeletingContractId(c.id),
+                            disabled: hasHistory,
+                          },
+                        ]
+                      : []),
                   ];
 
                   return (
@@ -1682,35 +1894,75 @@ function ContractsTableContent() {
                   },
                   {
                     label: t(
-                      "contracts.actionPromise",
-                      "Conceder Prórroga de Pago"
+                      "contracts.actionCopyPaymentLink",
+                      "Copiar Link de Pago"
                     ),
-                    icon: CalendarClock,
-                    onClick: () => handleOpenPromiseModal(c),
+                    icon: Link2,
+                    onClick: () => handleCopyPaymentLink(c.id),
                   },
                   {
-                    label: t("contracts.actionEdit", "Editar Contrato"),
-                    icon: Edit2,
-                    onClick: () => handleOpenEdit(c),
+                    label: t(
+                      "contracts.actionSendPaymentLink",
+                      "Enviar Link por WhatsApp"
+                    ),
+                    icon: MessageCircle,
+                    onClick: () => handleSendPaymentLinkWhatsApp(c),
                   },
-                  {
-                    label: isSuspended
-                      ? t("contracts.actionReactivate", "Reactivar Servicio")
-                      : t(
-                          "contracts.actionSuspend",
-                          "Suspender por Mora (Cortar)"
-                        ),
-                    icon: isSuspended ? Power : PowerOff,
-                    variant: isSuspended ? "emerald" : "default",
-                    onClick: () => handleToggleSuspension(c, !isSuspended),
-                  },
-                  {
-                    label: t("contracts.actionDelete", "Eliminar Contrato"),
-                    icon: Trash2,
-                    variant: "destructive",
-                    onClick: () => setDeletingContractId(c.id),
-                    disabled: hasHistory,
-                  },
+                  ...(canManageBilling
+                    ? [
+                        {
+                          label: t(
+                            "contracts.actionPromise",
+                            "Conceder Prórroga de Pago"
+                          ),
+                          icon: CalendarClock,
+                          onClick: () => handleOpenPromiseModal(c),
+                        },
+                      ]
+                    : []),
+                  ...(canManageContracts
+                    ? [
+                        {
+                          label: t(
+                            "contracts.actionEdit",
+                            "Editar Contrato"
+                          ),
+                          icon: Edit2,
+                          onClick: () => handleOpenEdit(c),
+                        },
+                        {
+                          label: isSuspended
+                            ? t(
+                                "contracts.actionReactivate",
+                                "Reactivar Servicio"
+                              )
+                            : t(
+                                "contracts.actionSuspend",
+                                "Suspender por Mora (Cortar)"
+                              ),
+                          icon: isSuspended ? Power : PowerOff,
+                          variant: (isSuspended ? "emerald" : "default") as
+                            | "emerald"
+                            | "default",
+                          onClick: () =>
+                            handleToggleSuspension(c, !isSuspended),
+                        },
+                      ]
+                    : []),
+                  ...(canDeleteContracts
+                    ? [
+                        {
+                          label: t(
+                            "contracts.actionDelete",
+                            "Eliminar Contrato"
+                          ),
+                          icon: Trash2,
+                          variant: "destructive" as const,
+                          onClick: () => setDeletingContractId(c.id),
+                          disabled: hasHistory,
+                        },
+                      ]
+                    : []),
                 ];
 
                 return (
@@ -1782,22 +2034,69 @@ function ContractsTableContent() {
                       >
                         {c.client?.fullName}
                       </h3>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 truncate">
-                        {c.address} ({c.city})
-                      </p>
+                      <div
+                        className={cn(
+                          "flex items-center gap-1.5 text-xs",
+                          "text-zinc-500 dark:text-zinc-400 mt-1"
+                        )}
+                      >
+                        <MapPin className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {c.address ? `${c.address} - ` : ""}
+                          {c.city}
+                        </span>
+                      </div>
+
+                      {/* Direct Contact Buttons */}
+                      {c.client?.phonePrimary && (
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          <a
+                            href={`tel:${c.client.phonePrimary}`}
+                            className={cn(
+                              "flex items-center justify-center gap-1.5 py-1.5 px-2",
+                              "rounded-xl text-xs font-semibold bg-zinc-100 hover:bg-zinc-200",
+                              "dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700",
+                              "dark:text-zinc-200 transition-colors"
+                            )}
+                          >
+                            <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>{t("common.call", "Llamar")}</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleSendPaymentLinkWhatsApp(c)}
+                            className={cn(
+                              "flex items-center justify-center gap-1.5 py-1.5 px-2",
+                              "rounded-xl text-xs font-semibold bg-emerald-500/10",
+                              "hover:bg-emerald-500/20 text-emerald-600",
+                              "dark:text-emerald-400 border border-emerald-500/20",
+                              "transition-colors"
+                            )}
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            <span>WhatsApp</span>
+                          </button>
+                        </div>
+                      )}
 
                       {/* Link Telemetry Box */}
                       <div
                         className={cn(
-                          "mt-4 p-3 rounded-xl bg-zinc-50",
+                          "mt-3 p-3 rounded-xl bg-zinc-50",
                           "dark:bg-zinc-950/60 border border-zinc-200/70",
                           "dark:border-zinc-800/80 space-y-2 text-xs"
                         )}
                       >
                         <div className="flex justify-between items-center">
-                          <span className="text-zinc-500">PPPoE User:</span>
-                          <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">
+                          <span className="text-zinc-500">PPPoE / IP:</span>
+                          <span
+                            className={cn(
+                              "font-mono font-bold text-zinc-800",
+                              "dark:text-zinc-200"
+                            )}
+                          >
                             {c.pppoeUser}
+                            {c.ipAddress ? ` (${c.ipAddress})` : ""}
                           </span>
                         </div>
                         <div className="flex justify-between items-center">
@@ -1813,7 +2112,12 @@ function ContractsTableContent() {
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-zinc-500">Plan Contratado:</span>
-                          <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                          <span
+                            className={cn(
+                              "font-bold text-emerald-600",
+                              "dark:text-emerald-400"
+                            )}
+                          >
                             {c.plan?.name} ({c.plan?.rateLimit})
                           </span>
                         </div>
@@ -1831,39 +2135,46 @@ function ContractsTableContent() {
                           </span>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Actions Footer */}
-                    <div
-                      className={cn(
-                        "mt-4 pt-4 border-t border-zinc-100",
-                        "dark:border-zinc-800/60 flex items-center",
-                        "justify-between gap-2"
-                      )}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleOpenEdit(c)}
-                        className="text-xs font-semibold rounded-xl"
-                      >
-                        {t("common.edit", "Editar")}
-                      </Button>
-
+                      {/* Main Action: Live Diagnostic */}
                       <Button
                         size="sm"
-                        variant="outline"
                         onClick={() => handleRunDiagnostic(c)}
                         className={cn(
-                          "rounded-xl gap-1.5 text-xs font-bold",
-                          "border-emerald-500/30 text-emerald-600",
-                          "dark:text-emerald-400 hover:bg-emerald-500/10"
+                          "w-full rounded-xl gap-1.5 text-xs font-bold mt-3",
+                          "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
                         )}
                       >
                         <Activity className="h-3.5 w-3.5" />
-                        {t("contracts.actionDiagnostic", "Diagnóstico")}
+                        {t(
+                          "contracts.actionDiagnosticBtn",
+                          "Diagnóstico en Vivo"
+                        )}
                       </Button>
                     </div>
+
+                    {/* Actions Footer */}
+                    {canManageContracts && (
+                      <div
+                        className={cn(
+                          "mt-3 pt-3 border-t border-zinc-100",
+                          "dark:border-zinc-800/60 flex items-center justify-end"
+                        )}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEdit(c)}
+                          className={cn(
+                            "text-xs font-semibold rounded-xl text-zinc-600",
+                            "dark:text-zinc-400"
+                          )}
+                        >
+                          <Edit2 className="h-3.5 w-3.5 mr-1" />
+                          {t("common.edit", "Editar")}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1885,7 +2196,7 @@ function ContractsTableContent() {
         onClearSelection={() => setSelectedContractIds([])}
         onActivate={handleBulkActivate}
         onDeactivate={handleBulkDeactivate}
-        onDelete={handleBulkDelete}
+        onDelete={canDeleteContracts ? handleBulkDelete : undefined}
         resourceName="contratos"
         isLoading={isActionLoading}
       />
@@ -1983,6 +2294,7 @@ function ContractsTableContent() {
                   ) : (
                     <Input
                       required
+                      maxLength={50}
                       placeholder="ej. SER-1042"
                       value={editingContract.contractNumber}
                       onChange={(e) =>
@@ -2119,6 +2431,7 @@ function ContractsTableContent() {
                   </Label>
                   <Input
                     required
+                    maxLength={60}
                     placeholder="ej. carlos.gonzalez"
                     value={editingContract.pppoeUser}
                     onChange={(e) =>
@@ -2136,6 +2449,7 @@ function ContractsTableContent() {
                     {t("contracts.labelPppoePassword", "Password PPPoE")}
                   </Label>
                   <Input
+                    maxLength={60}
                     placeholder="Password secret..."
                     value={editingContract.pppoePassword}
                     onChange={(e) =>
@@ -2153,6 +2467,7 @@ function ContractsTableContent() {
                     {t("contracts.labelIpAddress", "IP Asignada (Opcional)")}
                   </Label>
                   <Input
+                    maxLength={45}
                     placeholder="ej. 10.10.20.14"
                     value={editingContract.ipAddress}
                     onChange={(e) =>
@@ -2176,6 +2491,7 @@ function ContractsTableContent() {
                   </Label>
                   <Input
                     required
+                    maxLength={150}
                     placeholder="ej. Cra 5 # 12-34 Apto 302"
                     value={editingContract.address}
                     onChange={(e) =>
@@ -2193,6 +2509,7 @@ function ContractsTableContent() {
                     {t("contracts.labelNeighborhood", "Barrio / Vereda")}
                   </Label>
                   <Input
+                    maxLength={80}
                     placeholder="ej. Centro"
                     value={editingContract.neighborhood}
                     onChange={(e) =>
@@ -2248,6 +2565,7 @@ function ContractsTableContent() {
                       {t("contracts.labelRouterBrand", "Marca ONU / Router")}
                     </Label>
                     <Input
+                      maxLength={60}
                       placeholder="ej. Huawei, Tp-link, Dlink"
                       value={editingContract.routerBrand}
                       onChange={(e) =>
@@ -2265,6 +2583,7 @@ function ContractsTableContent() {
                       {t("contracts.labelRouterModel", "Modelo Equipo")}
                     </Label>
                     <Input
+                      maxLength={60}
                       placeholder="ej. HG8145V5, Archer C5"
                       value={editingContract.routerModel}
                       onChange={(e) =>
@@ -2282,6 +2601,7 @@ function ContractsTableContent() {
                       MAC Router / Tipo ONT
                     </Label>
                     <Input
+                      maxLength={30}
                       placeholder="ej. C4:E9:84:5C:72:CE o ONT VSOL"
                       value={editingContract.routerMac}
                       onChange={(e) =>
@@ -2301,6 +2621,7 @@ function ContractsTableContent() {
                       Antena (Radioenlace)
                     </Label>
                     <Input
+                      maxLength={60}
                       placeholder="ej. LiteBeam M5"
                       value={editingContract.antennaType}
                       onChange={(e) =>
@@ -2316,6 +2637,7 @@ function ContractsTableContent() {
                   <div className="space-y-1">
                     <Label className="text-xs font-bold">IP Antena</Label>
                     <Input
+                      maxLength={45}
                       placeholder="ej. 192.168.37.161"
                       value={editingContract.antennaIp}
                       onChange={(e) =>
@@ -2375,6 +2697,7 @@ function ContractsTableContent() {
                     Notas de Instalación / Observaciones del Técnico
                   </Label>
                   <Input
+                    maxLength={500}
                     placeholder="ej. Instala Felipe | Migración de fibra..."
                     value={editingContract.equipmentNotes}
                     onChange={(e) =>
@@ -2624,17 +2947,6 @@ function ContractsTableContent() {
                 >
                   Cerrar
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => handleRunDiagnostic(activeContractDiag)}
-                  disabled={diagLoading}
-                  className={cn(
-                    "rounded-xl bg-emerald-600 hover:bg-emerald-700",
-                    "text-white text-xs font-bold"
-                  )}
-                >
-                  {diagLoading ? "Reintentando..." : "Actualizar Diagnóstico"}
-                </Button>
               </div>
             </div>
           )}
@@ -2725,6 +3037,63 @@ function ContractsTableContent() {
                   maxLength={250}
                 />
               </div>
+
+              <div
+                className={cn(
+                  "p-2.5 rounded-xl border text-[11px] leading-relaxed",
+                  "bg-amber-500/10 border-amber-500/20 text-amber-700",
+                  "dark:text-amber-400"
+                )}
+              >
+                {t(
+                  "contracts.promisePolicyNotice",
+                  "Política: Máximo 1 prórroga cada 30 días. No se " +
+                    "permiten prórrogas si ya existe una activa en curso."
+                )}
+              </div>
+
+              {isAdmin && (
+                <div className="flex items-start gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="overrideLimitCheckbox"
+                    checked={promiseOverrideLimit}
+                    onChange={(e) =>
+                      setPromiseOverrideLimit(e.target.checked)
+                    }
+                    className={cn(
+                      "mt-0.5 rounded border-zinc-300",
+                      "dark:border-zinc-700 text-emerald-600",
+                      "focus:ring-emerald-500 h-4 w-4 accent-emerald-600",
+                      "cursor-pointer"
+                    )}
+                  />
+                  <label
+                    htmlFor="overrideLimitCheckbox"
+                    className="text-xs cursor-pointer select-none"
+                  >
+                    <span
+                      className={cn(
+                        "font-semibold text-zinc-800",
+                        "dark:text-zinc-200 block"
+                      )}
+                    >
+                      {t(
+                        "contracts.promiseOverrideTitle",
+                        "Excepción administrativa (Override)"
+                      )}
+                    </span>
+                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400 block">
+                      {t(
+                        "contracts.promiseOverrideDesc",
+                        "Concede prórroga extraordinaria aunque ya haya " +
+                          "usado la del mes. Requiere justificación " +
+                          "(mínimo 10 caracteres)."
+                      )}
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
@@ -2803,6 +3172,14 @@ function ContractsTableContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal de Auditoría y Conciliación MikroTik */}
+      <ContractAuditModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        nodes={nodes}
+        onAuditApplied={loadContracts}
+      />
     </div>
   );
 }

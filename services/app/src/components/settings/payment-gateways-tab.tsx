@@ -446,6 +446,7 @@ export function PaymentGatewaysTab({
                 </Label>
                 <Input
                   id="daviPayCustomerId"
+                  maxLength={100}
                   value={daviPayCustomerId}
                   onChange={(e) => setDaviPayCustomerId(e.target.value)}
                   placeholder="Ej: 110482"
@@ -460,6 +461,7 @@ export function PaymentGatewaysTab({
                 </Label>
                 <Input
                   id="daviPayPublicKey"
+                  maxLength={150}
                   value={daviPayPublicKey}
                   onChange={(e) => setDaviPayPublicKey(e.target.value)}
                   placeholder="Ej: 4920f04e8b0b978..."
@@ -488,6 +490,7 @@ export function PaymentGatewaysTab({
                 </div>
                 <Input
                   id="daviPayPrivateKey"
+                  maxLength={255}
                   type={showDaviPaySecrets ? "text" : "password"}
                   value={daviPayPrivateKey}
                   onChange={(e) => setDaviPayPrivateKey(e.target.value)}
@@ -503,6 +506,7 @@ export function PaymentGatewaysTab({
                 </Label>
                 <Input
                   id="daviPayPKey"
+                  maxLength={255}
                   type={showDaviPaySecrets ? "text" : "password"}
                   value={daviPayPKey}
                   onChange={(e) => setDaviPayPKey(e.target.value)}
@@ -672,6 +676,7 @@ export function PaymentGatewaysTab({
                 </Label>
                 <Input
                   id="efectyAgreementCode"
+                  maxLength={50}
                   value={efectyAgreementCode}
                   onChange={(e) => setEfectyAgreementCode(e.target.value)}
                   placeholder="Ej: 110542"
@@ -700,6 +705,7 @@ export function PaymentGatewaysTab({
                 </div>
                 <Input
                   id="efectySecretKey"
+                  maxLength={255}
                   type={showEfectySecret ? "text" : "password"}
                   value={efectySecretKey}
                   onChange={(e) => setEfectySecretKey(e.target.value)}

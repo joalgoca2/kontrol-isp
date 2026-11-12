@@ -57,6 +57,58 @@ export interface EfectyQueryResponse {
   fechaLimite?: string;
 }
 
+export interface PublicContractPaymentInfo {
+  contractId: string;
+  contractNumber: string;
+  brandName: string;
+  brandLogo?: string | null;
+  brandSupportPhone?: string | null;
+  brandCurrency: string;
+  clientName: string;
+  clientDocType: string;
+  clientDocNumber: string;
+  serviceAddress: string;
+  city: string;
+  planName: string;
+  downloadSpeedMbps: number;
+  uploadSpeedMbps: number;
+  monthlyAmountCop: number;
+  billingDay: number;
+  billingStatus: string;
+  serviceStatus: string;
+  hasDaviPay: boolean;
+  daviPayCheckoutData?: {
+    publicKey: string;
+    amount: number;
+    name: string;
+    description: string;
+    currency: string;
+    invoice: string;
+    country: string;
+    test: boolean;
+    external: boolean;
+    response: string;
+    confirmation: string;
+    extra1: string;
+    extra2: string;
+    nameBilling?: string;
+    addressBilling?: string;
+    typeDocBilling?: string;
+    numberDoc?: string;
+    mobilephoneBilling?: string;
+  } | null;
+  hasEfecty: boolean;
+  efectyAgreementCode?: string | null;
+  efectyReference?: string | null;
+  recentPayments: Array<{
+    receiptNumber: number;
+    amount: number;
+    paymentMethod: string;
+    createdAt: string | Date;
+    status: string;
+  }>;
+}
+
 export interface EfectyPaymentRequest {
   convenio: string;
   referencia: string;

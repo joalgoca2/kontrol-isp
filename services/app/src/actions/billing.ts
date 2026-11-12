@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { searchIdsWithUnaccent } from "@/lib/search";
+import { hasPermission } from "@/lib/permissions";
 import {
   paymentRecordSchema,
   billingCycleSchema,
@@ -803,13 +804,11 @@ export async function grantContractPromiseAction(
     }
 
     const userRoles = session.user.roles ?? [];
-    const canGrant = userRoles.some((r) =>
-      ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT"].includes(r)
-    );
-    if (!canGrant) {
+    if (!hasPermission(session.user, "billing:manage")) {
       return {
         success: false,
-        error: "Acceso denegado: permisos insuficientes para otorgar prórrogas.",
+        error:
+          "Acceso denegado: permisos insuficientes para otorgar prórrogas.",
       };
     }
 
@@ -821,7 +820,7 @@ export async function grantContractPromiseAction(
       };
     }
 
-    const { contractId, hours, notes } = parsed.data;
+    const { contractId, hours, notes, overrideLimit } = parsed.data;
     const contract = await prisma.contract.findUnique({
       where: { id: contractId },
       select: { brandId: true },
@@ -832,10 +831,21 @@ export async function grantContractPromiseAction(
     }
 
     const isSuperAdmin = userRoles.includes("SUPER_ADMIN");
+    const isAdmin = isSuperAdmin || userRoles.includes("ADMIN");
+
     if (!isSuperAdmin && session.user.brandId !== contract.brandId) {
       return {
         success: false,
         error: "No tienes permiso para operar sobre contratos de esta marca.",
+      };
+    }
+
+    if (overrideLimit && !isAdmin) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado: Solo administradores pueden autorizar " +
+          "excepciones administrativas de prórroga.",
       };
     }
 
@@ -845,10 +855,12 @@ export async function grantContractPromiseAction(
       hours,
       notes: notes ?? null,
       actor,
+      overrideLimit: Boolean(overrideLimit && isAdmin),
     });
 
     revalidatePath("/dashboard/contracts");
     revalidatePath("/dashboard/billing");
+    revalidatePath("/dashboard/tickets");
     return { success: true, data: result };
   } catch (err: unknown) {
     const message =

@@ -46,7 +46,8 @@ export interface NetworkMapResponse {
 }
 
 export async function getNetworkMapPoints(
-  brandId?: string
+  brandId?: string,
+  includeRetired = false
 ): Promise<ApiResponse<NetworkMapResponse>> {
   try {
     const session = await auth();
@@ -55,28 +56,34 @@ export async function getNetworkMapPoints(
     }
 
     const { brandFilter } = resolveTenantBrand(session, brandId);
+    const statusClause = includeRetired
+      ? {}
+      : { billingStatus: { not: "RETIRADO" as const } };
 
-    const [contractsWithCoords, totalWithoutCoords, activeNodes] = await Promise.all([
-      prisma.contract.findMany({
-        where: {
-          ...brandFilter,
-          latitude: { not: null },
-          longitude: { not: null },
-        },
-        include: {
-          client: true,
-          node: true,
-          plan: true,
-          equipment: true,
-        },
-        take: 3000,
-      }),
-      prisma.contract.count({
-        where: {
-          ...brandFilter,
-          OR: [{ latitude: null }, { longitude: null }],
-        },
-      }),
+    const [contractsWithCoords, totalWithoutCoords, activeNodes] =
+      await Promise.all([
+        prisma.contract.findMany({
+          where: {
+            ...brandFilter,
+            ...statusClause,
+            latitude: { not: null },
+            longitude: { not: null },
+          },
+          include: {
+            client: true,
+            node: true,
+            plan: true,
+            equipment: true,
+          },
+          take: 3000,
+        }),
+        prisma.contract.count({
+          where: {
+            ...brandFilter,
+            ...statusClause,
+            OR: [{ latitude: null }, { longitude: null }],
+          },
+        }),
       prisma.mikrotikNode.findMany({
         where: {
           ...brandFilter,
@@ -620,5 +627,93 @@ export async function syncAllNetworkStatus(
     return { success: false, error: message };
   }
 }
+
+export async function updateContractCoordinates(
+  contractId: string,
+  coords: { latitude: number; longitude: number }
+): Promise<ApiResponse<{ latitude: number; longitude: number }>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    if (!contractId) {
+      return { success: false, error: "Contrato no especificado." };
+    }
+
+    const { latitude, longitude } = coords;
+
+    if (
+      typeof latitude !== "number" ||
+      typeof longitude !== "number" ||
+      isNaN(latitude) ||
+      isNaN(longitude)
+    ) {
+      return { success: false, error: "Coordenadas numéricas inválidas." };
+    }
+
+    if (latitude < -90 || latitude > 90) {
+      return {
+        success: false,
+        error: "La latitud debe estar entre -90 y 90 grados.",
+      };
+    }
+
+    if (longitude < -180 || longitude > 180) {
+      return {
+        success: false,
+        error: "La longitud debe estar entre -180 y 180 grados.",
+      };
+    }
+
+    const isSuperAdmin = Boolean(
+      session.user.roles?.includes("SUPER_ADMIN")
+    );
+
+    const contract = await prisma.contract.findUnique({
+      where: { id: contractId },
+      select: { id: true, brandId: true },
+    });
+
+    if (!contract) {
+      return { success: false, error: "Contrato no encontrado." };
+    }
+
+    if (!isSuperAdmin && contract.brandId !== session.user.brandId) {
+      return { success: false, error: "Acceso denegado a este contrato." };
+    }
+
+    const actor = session.user.email ?? null;
+
+    const updated = await prisma.contract.update({
+      where: { id: contractId },
+      data: {
+        latitude,
+        longitude,
+        updatedBy: actor,
+      },
+      select: {
+        latitude: true,
+        longitude: true,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        latitude: updated.latitude!,
+        longitude: updated.longitude!,
+      },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al actualizar coordenadas del contrato.";
+    return { success: false, error: message };
+  }
+}
+
 
 

@@ -18,12 +18,16 @@ import {
   Copy,
   ExternalLink,
   Crosshair,
+  Pencil,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "@/components/providers/i18n-provider";
 import { useBrand } from "@/context/brand-context";
 import {
   getNetworkMapPoints,
+  updateContractCoordinates,
   startBackgroundGeocoding,
   getGeocodingStatus,
   syncAllNetworkStatus,
@@ -75,11 +79,17 @@ export default function NetworkMapPage() {
   // Filters & State
   const [searchInput, setSearchInput] = useState<string>("");
   const [appliedSearch, setAppliedSearch] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("ACTIVO");
   const [nodeFilter, setNodeFilter] = useState<string>("all");
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
   const [engineMode, setEngineMode] =
     useState<"google" | "osm">(configuredEngine);
+
+  // GPS Coordinates In-Place Editing
+  const [isEditingCoords, setIsEditingCoords] = useState<boolean>(false);
+  const [editLat, setEditLat] = useState<string>("");
+  const [editLng, setEditLng] = useState<string>("");
+  const [isSavingCoords, setIsSavingCoords] = useState<boolean>(false);
 
   // Geocoding Batch Execution
   const [isGeocoding, setIsGeocoding] = useState<boolean>(false);
@@ -260,6 +270,73 @@ export default function NetworkMapPage() {
     }
   };
 
+  // Reset coordinate editing state whenever selected point changes
+  useEffect(() => {
+    if (selectedPoint) {
+      setEditLat(selectedPoint.latitude.toString());
+      setEditLng(selectedPoint.longitude.toString());
+      setIsEditingCoords(false);
+    }
+  }, [selectedPoint?.id]);
+
+  const handleSaveCoords = async () => {
+    if (!selectedPoint) return;
+    const latNum = parseFloat(editLat);
+    const lngNum = parseFloat(editLng);
+    if (isNaN(latNum) || latNum < -90 || latNum > 90) {
+      toast.error("Latitud inválida. Debe estar entre -90 y 90.");
+      return;
+    }
+    if (isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
+      toast.error("Longitud inválida. Debe estar entre -180 y 180.");
+      return;
+    }
+
+    setIsSavingCoords(true);
+    try {
+      const res = await updateContractCoordinates(selectedPoint.id, {
+        latitude: latNum,
+        longitude: lngNum,
+      });
+
+      if (res.success && res.data) {
+        toast.success("Coordenadas GPS actualizadas correctamente.");
+        const newLat = res.data.latitude;
+        const newLng = res.data.longitude;
+
+        setSelectedPoint((prev) =>
+          prev ? { ...prev, latitude: newLat, longitude: newLng } : null
+        );
+
+        setMapData((prev) =>
+          prev
+            ? {
+                ...prev,
+                points: prev.points.map((pt) =>
+                  pt.id === selectedPoint.id
+                    ? { ...pt, latitude: newLat, longitude: newLng }
+                    : pt
+                ),
+              }
+            : null
+        );
+
+        setFocusTarget({
+          lat: newLat,
+          lng: newLng,
+          ts: Date.now(),
+        });
+        setIsEditingCoords(false);
+      } else {
+        toast.error(res.error || "Error al actualizar coordenadas.");
+      }
+    } catch (_err) {
+      toast.error("Error al guardar coordenadas del contrato.");
+    } finally {
+      setIsSavingCoords(false);
+    }
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setAppliedSearch(searchInput.trim());
@@ -300,6 +377,22 @@ export default function NetworkMapPage() {
     );
   });
 
+  // Active Card States for Interactive Metric Filters
+  const isAllCardActive = statusFilter === "all";
+  const isOnlineCardActive = statusFilter === "ONLINE";
+  const isOfflineCardActive = statusFilter === "OFFLINE";
+  const isSuspendedCardActive = statusFilter === "SUSPENDIDO";
+
+  const cardBaseClasses =
+    "cursor-pointer transition-all duration-200 border rounded-2xl " +
+    "backdrop-blur";
+  const cardActiveClasses =
+    "ring-2 ring-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/15 " +
+    "border-emerald-500 shadow-md";
+  const cardInactiveClasses =
+    "border-zinc-200 bg-white/90 dark:border-zinc-800 " +
+    "dark:bg-zinc-900/60 hover:border-emerald-500/40 hover:shadow-xs";
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -322,7 +415,7 @@ export default function NetworkMapPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
           {/* Refresh Data */}
           <Button
             size="sm"
@@ -330,7 +423,10 @@ export default function NetworkMapPage() {
             onClick={loadData}
             disabled={isLoading}
             title={t("common.refresh", "Actualizar datos del mapa")}
-            className="rounded-xl text-xs h-9 px-3 border-zinc-200 dark:border-zinc-800"
+            className={cn(
+              "rounded-xl text-xs h-9 px-2.5 sm:px-3 border-zinc-200",
+              "dark:border-zinc-800 shrink-0"
+            )}
           >
             <RefreshCw
               className={cn("h-3.5 w-3.5", isLoading && "animate-spin")}
@@ -344,18 +440,24 @@ export default function NetworkMapPage() {
             onClick={handleRunGeocodeBatch}
             disabled={isGeocoding}
             className={cn(
-              "rounded-xl text-xs h-9 font-semibold",
-              "border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300",
-              "hover:border-amber-500/40 hover:text-amber-600 dark:hover:text-amber-400"
+              "rounded-xl text-xs h-9 font-semibold flex-1 sm:flex-initial",
+              "border-zinc-200 dark:border-zinc-800 text-zinc-700",
+              "dark:text-zinc-300 hover:border-amber-500/40",
+              "hover:text-amber-600 dark:hover:text-amber-400"
             )}
           >
             <Sparkles
               className={cn(
-                "h-3.5 w-3.5 mr-1.5 text-amber-500",
+                "h-3.5 w-3.5 mr-1 text-amber-500 shrink-0",
                 isGeocoding && "animate-spin"
               )}
             />
-            {isGeocoding ? "Geocodificando de fondo..." : "Geocodificar (+25)"}
+            <span className="hidden sm:inline">
+              {isGeocoding ? "Geocodificando..." : "Geocodificar (+25)"}
+            </span>
+            <span className="sm:hidden">
+              {isGeocoding ? "Geocod..." : "Geocodificar"}
+            </span>
           </Button>
 
           {/* Primary Action: Sync MikroTik Live Telemetry */}
@@ -364,26 +466,40 @@ export default function NetworkMapPage() {
             onClick={handleSyncAllNetworkStatus}
             disabled={isSyncingAll || isLoading}
             className={cn(
-              "rounded-xl text-xs h-9 font-bold shadow-xs",
+              "rounded-xl text-xs h-9 font-bold shadow-xs flex-1 sm:flex-initial",
               "bg-emerald-600 hover:bg-emerald-700 text-white"
             )}
           >
             <Activity
               className={cn(
-                "h-3.5 w-3.5 mr-1.5",
+                "h-3.5 w-3.5 mr-1 shrink-0",
                 isSyncingAll && "animate-spin"
               )}
             />
-            {isSyncingAll
-              ? "Sincronizando..."
-              : "Sincronizar MikroTik"}
+            <span>
+              {isSyncingAll ? (
+                "Sincronizando..."
+              ) : (
+                <>
+                  <span className="hidden sm:inline">Sincronizar MikroTik</span>
+                  <span className="sm:hidden">Sincronizar</span>
+                </>
+              )}
+            </span>
           </Button>
         </div>
       </div>
 
       {/* Metrics Banner */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        {/* Puntos Mapeados */}
+        <Card
+          onClick={() => setStatusFilter(isAllCardActive ? "ACTIVO" : "all")}
+          className={cn(
+            cardBaseClasses,
+            isAllCardActive ? cardActiveClasses : cardInactiveClasses
+          )}
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
@@ -396,13 +512,22 @@ export default function NetworkMapPage() {
                 {mapData?.totalWithoutCoords ?? 0} pendientes
               </span>
             </div>
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 shrink-0">
               <Layers className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
+        {/* Online MikroTik */}
+        <Card
+          onClick={() =>
+            setStatusFilter(isOnlineCardActive ? "ACTIVO" : "ONLINE")
+          }
+          className={cn(
+            cardBaseClasses,
+            isOnlineCardActive ? cardActiveClasses : cardInactiveClasses
+          )}
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div className="space-y-0.5">
               <span
@@ -418,13 +543,22 @@ export default function NetworkMapPage() {
               </p>
               <span className="text-[10px] text-zinc-400">Sesiones activas</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 shrink-0">
               <CheckCircle2 className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
+        {/* Offline */}
+        <Card
+          onClick={() =>
+            setStatusFilter(isOfflineCardActive ? "ACTIVO" : "OFFLINE")
+          }
+          className={cn(
+            cardBaseClasses,
+            isOfflineCardActive ? cardActiveClasses : cardInactiveClasses
+          )}
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div className="space-y-0.5">
               <span
@@ -440,13 +574,22 @@ export default function NetworkMapPage() {
               </p>
               <span className="text-[10px] text-zinc-400">Sin conexión</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600">
+            <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600 shrink-0">
               <XCircle className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border-zinc-200 dark:border-zinc-800">
+        {/* Suspendidos Mora */}
+        <Card
+          onClick={() =>
+            setStatusFilter(isSuspendedCardActive ? "ACTIVO" : "SUSPENDIDO")
+          }
+          className={cn(
+            cardBaseClasses,
+            isSuspendedCardActive ? cardActiveClasses : cardInactiveClasses
+          )}
+        >
           <CardContent className="p-3.5 flex items-center justify-between">
             <div className="space-y-0.5">
               <span
@@ -462,22 +605,17 @@ export default function NetworkMapPage() {
               </p>
               <span className="text-[10px] text-zinc-400">Cortados</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600">
+            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 shrink-0">
               <AlertTriangle className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filter and Search Bar: 3-Column Responsive Grid */}
-      <div
-        className={cn(
-          "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5",
-          "items-center"
-        )}
-      >
+      {/* Filter and Search Bar: Compact 2-Row Mobile Standard */}
+      <div className="space-y-2 sm:space-y-0 sm:grid sm:grid-cols-3 sm:gap-2.5 items-center">
         {/* Text Search Form (Enter or Click Lupa) */}
-        <form onSubmit={handleSearchSubmit} className="relative">
+        <form onSubmit={handleSearchSubmit} className="relative w-full">
           <button
             type="submit"
             title="Buscar abonado"
@@ -512,44 +650,49 @@ export default function NetworkMapPage() {
           )}
         </form>
 
-        {/* MikroTik Node Filter */}
-        <Select value={nodeFilter} onValueChange={setNodeFilter}>
-          <SelectTrigger
-            className={cn(
-              "w-full text-xs h-9 rounded-xl",
-              "border-zinc-200 dark:border-zinc-800"
-            )}
-          >
-            <SelectValue placeholder="Nodo MikroTik..." />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl text-xs">
-            <SelectItem value="all">🌐 Todos los Nodos</SelectItem>
-            {(mapData?.nodes || []).map((node) => (
-              <SelectItem key={node.id} value={node.id}>
-                🖥️ {node.name} ({node.code})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* 2 Selects: Side-by-side on mobile, individual grid columns on sm: */}
+        <div className="grid grid-cols-2 gap-2 sm:contents">
+          {/* MikroTik Node Filter */}
+          <Select value={nodeFilter} onValueChange={setNodeFilter}>
+            <SelectTrigger
+              className={cn(
+                "w-full text-xs h-9 rounded-xl",
+                "border-zinc-200 dark:border-zinc-800"
+              )}
+            >
+              <SelectValue placeholder="Nodo MikroTik..." />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl text-xs">
+              <SelectItem value="all">🌐 Todos los Nodos</SelectItem>
+              {(mapData?.nodes || []).map((node) => (
+                <SelectItem key={node.id} value={node.id}>
+                  🖥️ {node.name} ({node.code})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        {/* Link / Billing Status Filter */}
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger
-            className={cn(
-              "w-full text-xs h-9 rounded-xl",
-              "border-zinc-200 dark:border-zinc-800"
-            )}
-          >
-            <SelectValue placeholder="Estado de enlace..." />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl text-xs">
-            <SelectItem value="all">⚡ Todos los Estados</SelectItem>
-            <SelectItem value="ACTIVO">✅ Solo Contratos Activos (CRM)</SelectItem>
-            <SelectItem value="ONLINE">🟢 Solo Online (MikroTik)</SelectItem>
-            <SelectItem value="OFFLINE">🔴 Solo Offline</SelectItem>
-            <SelectItem value="SUSPENDIDO">🟠 Suspendidos Mora</SelectItem>
-          </SelectContent>
-        </Select>
+          {/* Link / Billing Status Filter */}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger
+              className={cn(
+                "w-full text-xs h-9 rounded-xl",
+                "border-zinc-200 dark:border-zinc-800"
+              )}
+            >
+              <SelectValue placeholder="Estado de enlace..." />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl text-xs">
+              <SelectItem value="ACTIVO">
+                ✅ Solo Activos (Por Defecto)
+              </SelectItem>
+              <SelectItem value="all">⚡ Todos los Estados</SelectItem>
+              <SelectItem value="ONLINE">🟢 Solo Online (MikroTik)</SelectItem>
+              <SelectItem value="OFFLINE">🔴 Solo Offline</SelectItem>
+              <SelectItem value="SUSPENDIDO">🟠 Suspendidos Mora</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Main Map Canvas with Floating Desktop Card & Mobile Bottom Sheet */}
@@ -868,42 +1011,148 @@ export default function NetworkMapPage() {
                   </p>
                   <div
                     className={cn(
-                      "pt-1.5 flex items-center justify-between border-t",
-                      "border-zinc-200/50 dark:border-zinc-800/50"
+                      "pt-1.5 border-t border-zinc-200/50 dark:border-zinc-800/50",
+                      "space-y-2"
                     )}
                   >
-                    <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                      <span className="text-zinc-400 font-bold">LAT:</span>
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-                        {selectedPoint.latitude.toFixed(5)}
-                      </span>
-                      <span className="text-zinc-300 dark:text-zinc-700">|</span>
-                      <span className="text-zinc-400 font-bold">LNG:</span>
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-                        {selectedPoint.longitude.toFixed(5)}
-                      </span>
-                    </div>
+                    {!isEditingCoords ? (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                          <span className="text-zinc-400 font-bold">LAT:</span>
+                          <span
+                            className="font-semibold text-zinc-700 dark:text-zinc-300"
+                          >
+                            {selectedPoint.latitude.toFixed(5)}
+                          </span>
+                          <span className="text-zinc-300 dark:text-zinc-700">|</span>
+                          <span className="text-zinc-400 font-bold">LNG:</span>
+                          <span
+                            className="font-semibold text-zinc-700 dark:text-zinc-300"
+                          >
+                            {selectedPoint.longitude.toFixed(5)}
+                          </span>
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFocusTarget({
-                          lat: selectedPoint.latitude,
-                          lng: selectedPoint.longitude,
-                          ts: Date.now(),
-                        });
-                        toast.success("Enfocando nodo en el mapa");
-                      }}
-                      className={cn(
-                        "flex items-center gap-1 text-[10px] font-bold px-2 py-0.5",
-                        "rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400",
-                        "hover:bg-sky-500/20 transition-colors shadow-2xs"
-                      )}
-                      title="Centrar y enfocar nodo en el mapa"
-                    >
-                      <Crosshair className="h-3 w-3" />
-                      Centrar en Mapa
-                    </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditLat(selectedPoint.latitude.toString());
+                              setEditLng(selectedPoint.longitude.toString());
+                              setIsEditingCoords(true);
+                            }}
+                            className={cn(
+                              "flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5",
+                              "rounded-md bg-amber-500/10 text-amber-600",
+                              "dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                            )}
+                            title="Modificar coordenadas GPS"
+                          >
+                            <Pencil className="h-2.5 w-2.5" />
+                            Editar
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFocusTarget({
+                                lat: selectedPoint.latitude,
+                                lng: selectedPoint.longitude,
+                                ts: Date.now(),
+                              });
+                              toast.success("Enfocando nodo en el mapa");
+                            }}
+                            className={cn(
+                              "flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5",
+                              "rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400",
+                              "hover:bg-sky-500/20 transition-colors shadow-2xs"
+                            )}
+                            title="Centrar y enfocar nodo en el mapa"
+                          >
+                            <Crosshair className="h-3 w-3" />
+                            Centrar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className={cn(
+                          "space-y-2 p-2 rounded-xl bg-zinc-100/80 dark:bg-zinc-950/80",
+                          "border border-zinc-200 dark:border-zinc-800"
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span
+                            className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300"
+                          >
+                            Actualizar Coordenadas GPS
+                          </span>
+                          <span className="text-[9px] text-zinc-400 font-mono">
+                            Lat / Lng
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div>
+                            <span className="text-[9px] font-bold text-zinc-400 block mb-0.5">
+                              Latitud
+                            </span>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={editLat}
+                              onChange={(e) => setEditLat(e.target.value)}
+                              placeholder="Ej: 4.59812"
+                              className="h-7 text-xs px-2 py-0 font-mono"
+                              disabled={isSavingCoords}
+                            />
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-zinc-400 block mb-0.5">
+                              Longitud
+                            </span>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={editLng}
+                              onChange={(e) => setEditLng(e.target.value)}
+                              placeholder="Ej: -74.07583"
+                              className="h-7 text-xs px-2 py-0 font-mono"
+                              disabled={isSavingCoords}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingCoords(false)}
+                            disabled={isSavingCoords}
+                            className={cn(
+                              "px-2 py-1 text-[10px] font-semibold text-zinc-500",
+                              "hover:text-zinc-800 dark:hover:text-zinc-200"
+                            )}
+                          >
+                            Cancelar
+                          </button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleSaveCoords}
+                            disabled={isSavingCoords}
+                            className={cn(
+                              "h-7 px-2.5 text-[10px] font-bold",
+                              "bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                            )}
+                          >
+                            {isSavingCoords ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Save className="h-3 w-3" />
+                            )}
+                            Guardar Coordenadas
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

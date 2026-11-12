@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { searchIdsWithUnaccent } from "@/lib/search";
+import { hasPermission } from "@/lib/permissions";
 import { clientSchema } from "@/lib/validations/isp";
 import type {
   ApiResponse,
@@ -27,6 +28,13 @@ export async function getClientsPaginated(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "clients:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:read'.",
+      };
     }
 
     const isSuperAdmin = Boolean(
@@ -169,6 +177,13 @@ export async function getClients(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "clients:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:read'.",
+      };
+    }
+
     const isSuperAdmin = session.user.roles?.includes("SUPER_ADMIN");
     const targetBrandId =
       isSuperAdmin && params.brandId && params.brandId !== "ALL"
@@ -256,6 +271,13 @@ export async function getClientById(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "clients:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:read'.",
+      };
+    }
+
     const client = await prisma.client.findUnique({
       where: { id },
       include: {
@@ -297,6 +319,13 @@ export async function saveClient(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "clients:manage")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:manage'.",
+      };
     }
 
     const parsed = clientSchema.safeParse(rawInput);
@@ -400,6 +429,13 @@ export async function toggleClientStatus(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "clients:manage")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:manage'.",
+      };
+    }
+
     const client = await prisma.client.findUnique({
       where: { id },
     });
@@ -447,6 +483,13 @@ export async function deleteClient(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "clients:delete")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:delete'.",
+      };
     }
 
     const client = await prisma.client.findUnique({
@@ -508,6 +551,13 @@ export async function bulkToggleClientsStatus(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "clients:manage")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:manage'.",
+      };
+    }
+
     if (!ids || ids.length === 0) {
       return { success: false, error: "No se seleccionaron clientes." };
     }
@@ -551,6 +601,13 @@ export async function bulkDeleteClients(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "clients:delete")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'clients:delete'.",
+      };
     }
 
     if (!ids || ids.length === 0) {

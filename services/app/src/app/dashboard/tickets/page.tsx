@@ -8,6 +8,7 @@ import React, {
   useMemo,
 } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Headphones,
   Plus,
@@ -28,11 +29,13 @@ import {
   PowerOff,
   User,
   Phone,
+  MessageCircle,
   Globe,
   Building2,
 } from "lucide-react";
 import { useBrand } from "@/context/brand-context";
 import { useTranslation } from "@/components/providers/i18n-provider";
+import { useIsMobile } from "@/lib/use-mobile";
 import {
   getTicketsPaginated,
   saveSupportTicket,
@@ -99,6 +102,7 @@ import { ContractSearchSelector } from "@/components/common/contract-search-sele
 import {
   ContractExpressDiagnosticModal,
 } from "@/components/common/contract-express-diagnostic";
+import { hasPermission } from "@/lib/permissions";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -126,15 +130,22 @@ function TicketsTableContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const { activeBrandId, activeBrand } = useBrand();
+
+  const canDeleteTickets = hasPermission(session?.user, "tickets:delete");
 
   // URL Synced Parameters
   const currentPage = Number(searchParams.get("page")) || 1;
   const searchQuery = searchParams.get("search") || "";
-  const statusFilter = searchParams.get("status") || "all";
+  const statusFilter = searchParams.get("status") || "OPEN_GROUP";
   const priorityFilter = searchParams.get("priority") || "all";
   const channelFilter = searchParams.get("channel") || "all";
-  const viewMode = searchParams.get("view") === "grid" ? "grid" : "list";
+  const isMobile = useIsMobile();
+  const rawView = searchParams.get("view");
+  const viewMode = (
+    rawView ?? (isMobile ? "grid" : "list")
+  ) as "list" | "grid";
   const ITEMS_PER_PAGE = 10;
 
   // Data & Metrics State
@@ -182,9 +193,7 @@ function TicketsTableContent() {
         if (
           value === null ||
           value === "" ||
-          value === "all" ||
-          value === "ALL" ||
-          (key === "view" && value === "list")
+          (key !== "status" && (value === "all" || value === "ALL"))
         ) {
           newSearchParams.delete(key);
         } else {
@@ -488,12 +497,16 @@ function TicketsTableContent() {
         variant: isResolved ? "default" : "emerald",
         onClick: () => handleToggleStatus(ticket),
       },
-      {
-        label: t("tickets.actionDelete", "Eliminar Ticket"),
-        icon: Trash2,
-        variant: "destructive",
-        onClick: () => setTicketToDelete(ticket),
-      },
+      ...(canDeleteTickets
+        ? [
+            {
+              label: t("tickets.actionDelete", "Eliminar Ticket"),
+              icon: Trash2,
+              variant: "destructive" as const,
+              onClick: () => setTicketToDelete(ticket),
+            },
+          ]
+        : []),
     ];
   };
 
@@ -682,7 +695,7 @@ function TicketsTableContent() {
       </div>
 
       {/* Filter Metric Cards Standard */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Card 1: Total de Tickets */}
         <Card
           onClick={() =>
@@ -698,27 +711,41 @@ function TicketsTableContent() {
             isTotalCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-3.5 sm:p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-zinc-500 dark:text-zinc-400",
-                  "uppercase tracking-wider"
+                  "text-[10px] sm:text-xs font-bold text-zinc-500",
+                  "dark:text-zinc-400 uppercase tracking-wider"
                 )}
               >
                 {t("tickets.cardTotalTitle", "Total de Tickets")}
               </p>
-              <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : totalCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-zinc-900",
+                  "dark:text-white"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  totalCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400 hidden sm:block">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("tickets.cardTotalDesc", "Casos registrados en soporte")}
               </p>
             </div>
             <div
               className={cn(
-                "p-2.5 sm:p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800",
-                "text-zinc-600 dark:text-zinc-300"
+                "p-2 sm:p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800",
+                "text-zinc-600 dark:text-zinc-300 shrink-0"
               )}
             >
               <Headphones className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -739,27 +766,41 @@ function TicketsTableContent() {
             isOpenCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-3.5 sm:p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-sky-600",
+                  "text-[10px] sm:text-xs font-bold text-sky-600",
                   "dark:text-sky-400 uppercase tracking-wider"
                 )}
               >
                 {t("tickets.cardOpenTitle", "Abiertos / En Curso")}
               </p>
-              <h3 className="text-2xl font-black text-sky-600 dark:text-sky-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : openCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-sky-600",
+                  "dark:text-sky-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  openCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400 hidden sm:block">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("tickets.cardOpenDesc", "En atención o diagnóstico")}
               </p>
             </div>
             <div
               className={cn(
-                "p-2.5 sm:p-3 rounded-xl bg-sky-500/10",
-                "text-sky-600 dark:text-sky-400"
+                "p-2 sm:p-3 rounded-xl bg-sky-500/10",
+                "text-sky-600 dark:text-sky-400 shrink-0"
               )}
             >
               <Clock className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -780,20 +821,34 @@ function TicketsTableContent() {
             isEscalatedCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-3.5 sm:p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-amber-600",
+                  "text-[10px] sm:text-xs font-bold text-amber-600",
                   "dark:text-amber-400 uppercase tracking-wider"
                 )}
               >
                 {t("tickets.cardEscalatedTitle", "Escalados a Humano")}
               </p>
-              <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : escalatedCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-amber-600",
+                  "dark:text-amber-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  escalatedCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400 hidden sm:block">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t(
                   "tickets.cardEscalatedDesc",
                   "Requieren intervención humana"
@@ -802,8 +857,8 @@ function TicketsTableContent() {
             </div>
             <div
               className={cn(
-                "p-2.5 sm:p-3 rounded-xl bg-amber-500/10",
-                "text-amber-600 dark:text-amber-400"
+                "p-2 sm:p-3 rounded-xl bg-amber-500/10",
+                "text-amber-600 dark:text-amber-400 shrink-0"
               )}
             >
               <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -824,220 +879,255 @@ function TicketsTableContent() {
             isResolvedCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-3.5 sm:p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-emerald-600",
+                  "text-[10px] sm:text-xs font-bold text-emerald-600",
                   "dark:text-emerald-400 uppercase tracking-wider"
                 )}
               >
                 {t("tickets.cardResolvedTitle", "Casos Resueltos")}
               </p>
-              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : resolvedCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-emerald-600",
+                  "dark:text-emerald-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  resolvedCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("tickets.cardResolvedDesc", "Solucionados o cerrados")}
               </p>
             </div>
             <div
               className={cn(
-                "p-3 rounded-xl bg-emerald-500/10",
-                "text-emerald-600 dark:text-emerald-400"
+                "p-2 sm:p-3 rounded-xl bg-emerald-500/10",
+                "text-emerald-600 dark:text-emerald-400 shrink-0"
               )}
             >
-              <CheckCircle2 className="h-5 w-5" />
+              <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filter and Search Bar with Icon-Only View Switcher */}
-      <div
-        className={cn(
-          "flex flex-col md:flex-row gap-3 items-stretch",
-          "md:items-center justify-between"
-        )}
-      >
-        <form onSubmit={handleSearchSubmit} className="relative flex-1">
-          <button
-            type="submit"
-            aria-label={t("common.search", "Buscar")}
-            className={cn(
-              "absolute left-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md",
-              "text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400",
-              "transition-colors cursor-pointer"
-            )}
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder={t(
-              "tickets.searchPlaceholder",
-              "Buscar por ticket, contrato, PPPoE, titular, documento o descripción..."
-            )}
-            className={cn(
-              "pl-9 pr-9 rounded-xl text-xs h-10 border-zinc-200",
-              "dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
-            )}
-          />
-          {searchInput && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className={cn(
-                "absolute right-3 top-1/2 -translate-y-1/2",
-                "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-              )}
-            >
-              <X className="h-4 w-4" />
-            </button>
+      {/* Filter and Search Bar with View Switcher */}
+      <div className="space-y-2.5">
+        <div
+          className={cn(
+            "flex flex-col lg:flex-row gap-2.5 items-stretch",
+            "lg:items-center justify-between"
           )}
-        </form>
-
-        <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-          {/* Status Filter */}
-          <Select
-            value={statusFilter}
-            onValueChange={(val) => updateUrlParams({ status: val, page: 1 })}
-          >
-            <SelectTrigger
-              className={cn(
-                "w-full sm:w-44 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
-              )}
-            >
-              <SelectValue
+        >
+          {/* Search Bar + View Mode Switcher */}
+          <div className="flex items-center gap-2 flex-1">
+            <form onSubmit={handleSearchSubmit} className="relative flex-1">
+              <button
+                type="submit"
+                aria-label={t("common.search", "Buscar")}
+                className={cn(
+                  "absolute left-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md",
+                  "text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400",
+                  "transition-colors cursor-pointer"
+                )}
+              >
+                <Search className="h-4 w-4" />
+              </button>
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder={t(
-                  "tickets.filterStatusAll",
-                  "Todos los Estados"
+                  "tickets.searchPlaceholder",
+                  "Buscar por ticket, contrato, PPPoE, titular, documento..."
+                )}
+                className={cn(
+                  "pl-9 pr-9 rounded-xl text-xs h-10 border-zinc-200",
+                  "dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
                 )}
               />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("tickets.filterStatusAll", "Todos los Estados")}
-              </SelectItem>
-              <SelectItem value="TRANSFERIDO_HUMANO">
-                {t("tickets.filterEscalated", "Traspasos a Humano")}
-              </SelectItem>
-              <SelectItem value="ABIERTO">
-                {t("tickets.filterOpen", "Abiertos")}
-              </SelectItem>
-              <SelectItem value="EN_DIAGNOSTICO_IA">
-                {t("tickets.filterAiDiag", "En Diagnóstico IA")}
-              </SelectItem>
-              <SelectItem value="VISITA_AGENDADA">
-                {t("tickets.filterVisit", "Visita Agendada")}
-              </SelectItem>
-              <SelectItem value="RESUELTO">
-                {t("tickets.filterResolved", "Resueltos")}
-              </SelectItem>
-              <SelectItem value="CERRADO">
-                {t("tickets.filterClosed", "Cerrados")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className={cn(
+                    "absolute right-3 top-1/2 -translate-y-1/2",
+                    "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                  )}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </form>
 
-          {/* Priority Filter */}
-          <Select
-            value={priorityFilter}
-            onValueChange={(val) => updateUrlParams({ priority: val, page: 1 })}
-          >
-            <SelectTrigger
+            {/* View Mode Switcher: List vs Grid */}
+            <div
               className={cn(
-                "w-full sm:w-40 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
+                "flex items-center p-1 rounded-xl bg-zinc-100 shrink-0",
+                "dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
               )}
             >
-              <SelectValue
-                placeholder={t(
-                  "tickets.filterPriorityAll",
-                  "Todas las Prioridades"
+              <button
+                type="button"
+                onClick={() => updateUrlParams({ view: "list" })}
+                title={t("tickets.viewList", "Vista Lista")}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
+                  viewMode === "list"
+                    ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
+                        "dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
                 )}
-              />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("tickets.filterPriorityAll", "Todas las Prioridades")}
-              </SelectItem>
-              <SelectItem value="CRITICA">Crítica</SelectItem>
-              <SelectItem value="ALTA">Alta</SelectItem>
-              <SelectItem value="MEDIA">Media</SelectItem>
-              <SelectItem value="BAJA">Baja</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Channel Filter */}
-          <Select
-            value={channelFilter}
-            onValueChange={(val) => updateUrlParams({ channel: val, page: 1 })}
-          >
-            <SelectTrigger
-              className={cn(
-                "w-full sm:w-40 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
-              )}
-            >
-              <SelectValue
-                placeholder={t(
-                  "tickets.filterChannelAll",
-                  "Todos los Canales"
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateUrlParams({ view: "grid" })}
+                title={t("tickets.viewGrid", "Vista Tarjetas")}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
+                  viewMode === "grid"
+                    ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
+                        "dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
                 )}
-              />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("tickets.filterChannelAll", "Todos los Canales")}
-              </SelectItem>
-              <SelectItem value="WHATSAPP_AI">WhatsApp IA</SelectItem>
-              <SelectItem value="TELEFONO">Teléfono</SelectItem>
-              <SelectItem value="PORTAL">Portal Web</SelectItem>
-              <SelectItem value="PRESENCIAL">Presencial</SelectItem>
-            </SelectContent>
-          </Select>
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
 
-          {/* View Mode Switcher: List vs Grid (Icon-Only Standard) */}
-          <div
-            className={cn(
-              "flex items-center p-1 rounded-xl bg-zinc-100",
-              "dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => updateUrlParams({ view: "list" })}
-              title={t("tickets.viewList", "Vista Lista")}
-              className={cn(
-                "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
-                viewMode === "list"
-                  ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
-                      "dark:text-emerald-400 shadow-xs font-bold"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              )}
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => updateUrlParams({ view: "grid" })}
-              title={t("tickets.viewGrid", "Vista Tarjetas")}
-              className={cn(
-                "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
-                viewMode === "grid"
-                  ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
-                      "dark:text-emerald-400 shadow-xs font-bold"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              )}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
+          {/* Select Dropdown Filters */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-center">
+            {/* Status Filter */}
+            <div className="w-full sm:w-44">
+              <Select
+                value={statusFilter}
+                onValueChange={(val) =>
+                  updateUrlParams({ status: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "tickets.filterStatusAll",
+                      "Todos los Estados"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="OPEN_GROUP">
+                    {t("tickets.filterOpenGroup", "Abiertos / En Curso")}
+                  </SelectItem>
+                  <SelectItem value="all">
+                    {t("tickets.filterStatusAll", "Todos los Estados")}
+                  </SelectItem>
+                  <SelectItem value="TRANSFERIDO_HUMANO">
+                    {t("tickets.filterEscalated", "Traspasos a Humano")}
+                  </SelectItem>
+                  <SelectItem value="ABIERTO">
+                    {t("tickets.filterOpen", "Abiertos")}
+                  </SelectItem>
+                  <SelectItem value="EN_DIAGNOSTICO_IA">
+                    {t("tickets.filterAiDiag", "En Diagnóstico IA")}
+                  </SelectItem>
+                  <SelectItem value="VISITA_AGENDADA">
+                    {t("tickets.filterVisit", "Visita Agendada")}
+                  </SelectItem>
+                  <SelectItem value="RESUELTO">
+                    {t("tickets.filterResolved", "Resueltos")}
+                  </SelectItem>
+                  <SelectItem value="CERRADO">
+                    {t("tickets.filterClosed", "Cerrados")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Priority Filter */}
+            <div className="w-full sm:w-40">
+              <Select
+                value={priorityFilter}
+                onValueChange={(val) =>
+                  updateUrlParams({ priority: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "tickets.filterPriorityAll",
+                      "Todas las Prioridades"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("tickets.filterPriorityAll", "Todas las Prioridades")}
+                  </SelectItem>
+                  <SelectItem value="CRITICA">Crítica</SelectItem>
+                  <SelectItem value="ALTA">Alta</SelectItem>
+                  <SelectItem value="MEDIA">Media</SelectItem>
+                  <SelectItem value="BAJA">Baja</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Channel Filter */}
+            <div className="col-span-2 sm:col-span-1 w-full sm:w-40">
+              <Select
+                value={channelFilter}
+                onValueChange={(val) =>
+                  updateUrlParams({ channel: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "tickets.filterChannelAll",
+                      "Todos los Canales"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("tickets.filterChannelAll", "Todos los Canales")}
+                  </SelectItem>
+                  <SelectItem value="WHATSAPP_AI">WhatsApp IA</SelectItem>
+                  <SelectItem value="TELEFONO">Teléfono</SelectItem>
+                  <SelectItem value="PORTAL">Portal Web</SelectItem>
+                  <SelectItem value="PRESENCIAL">Presencial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>
@@ -1383,10 +1473,47 @@ function TicketsTableContent() {
                         {tk.contract?.address}
                       </p>
 
+                      {/* Direct Contact Buttons */}
+                      {tk.contract?.client?.phonePrimary && (
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          <a
+                            href={`tel:${tk.contract.client.phonePrimary}`}
+                            className={cn(
+                              "flex items-center justify-center gap-1.5 py-1.5 px-2",
+                              "rounded-xl text-xs font-semibold bg-zinc-100",
+                              "hover:bg-zinc-200 dark:bg-zinc-800",
+                              "dark:hover:bg-zinc-700 text-zinc-700",
+                              "dark:text-zinc-200 transition-colors"
+                            )}
+                          >
+                            <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>{t("common.call", "Llamar")}</span>
+                          </a>
+                          <a
+                            href={`https://wa.me/57${tk.contract.client.phonePrimary.replace(
+                              /\D/g,
+                              ""
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={cn(
+                              "flex items-center justify-center gap-1.5 py-1.5 px-2",
+                              "rounded-xl text-xs font-semibold bg-emerald-500/10",
+                              "hover:bg-emerald-500/20 text-emerald-600",
+                              "dark:text-emerald-400 border border-emerald-500/20",
+                              "transition-colors"
+                            )}
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            <span>WhatsApp</span>
+                          </a>
+                        </div>
+                      )}
+
                       {/* Case Summary Box */}
                       <div
                         className={cn(
-                          "mt-4 p-3 rounded-xl bg-zinc-50",
+                          "mt-3 p-3 rounded-xl bg-zinc-50",
                           "dark:bg-zinc-950/60 border border-zinc-200/70",
                           "dark:border-zinc-800/80 space-y-2 text-xs"
                         )}
@@ -1426,12 +1553,47 @@ function TicketsTableContent() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Main Action: Express Diagnostic if contract available */}
+                      {tk.contract ? (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setSelectedContractForDiag(
+                              tk.contract as unknown as Contract
+                            );
+                            setIsDiagModalOpen(true);
+                          }}
+                          className={cn(
+                            "w-full rounded-xl gap-1.5 text-xs font-bold mt-3",
+                            "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                          )}
+                        >
+                          <Activity className="h-3.5 w-3.5" />
+                          {t(
+                            "tickets.actionDiagBtn",
+                            "Diagnóstico Express"
+                          )}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => setSelectedTicket(tk)}
+                          className={cn(
+                            "w-full rounded-xl gap-1.5 text-xs font-bold mt-3",
+                            "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                          )}
+                        >
+                          <FileText className="h-3.5 w-3.5" />
+                          {t("tickets.actionViewDetail", "Ver Caso")}
+                        </Button>
+                      )}
                     </div>
 
                     {/* Actions Footer */}
                     <div
                       className={cn(
-                        "mt-4 pt-4 border-t border-zinc-100",
+                        "mt-3 pt-3 border-t border-zinc-100",
                         "dark:border-zinc-800/60 flex items-center",
                         "justify-between gap-2"
                       )}
@@ -1480,7 +1642,7 @@ function TicketsTableContent() {
         onClearSelection={() => setSelectedIds([])}
         onActivate={handleBulkResolve}
         onDeactivate={handleBulkReopen}
-        onDelete={handleBulkDelete}
+        onDelete={canDeleteTickets ? handleBulkDelete : undefined}
         resourceName="tickets"
       />
 
@@ -1605,8 +1767,18 @@ function TicketsTableContent() {
 
       {/* Create / Edit Support Ticket Dialog */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-lg rounded-2xl">
-          <DialogHeader>
+        <DialogContent
+          className={cn(
+            "sm:max-w-xl max-h-[88vh] flex flex-col p-0 rounded-2xl",
+            "overflow-hidden"
+          )}
+        >
+          <DialogHeader
+            className={cn(
+              "p-5 pb-3 border-b border-zinc-100",
+              "dark:border-zinc-800 shrink-0"
+            )}
+          >
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <Headphones className="h-5 w-5 text-emerald-500" />
               {editingTicket.id
@@ -1616,35 +1788,107 @@ function TicketsTableContent() {
                     "Registrar Nuevo Ticket de Soporte"
                   )}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs">
               {editingTicket.id
                 ? "Actualiza la prioridad, estado o bitácora técnica del ticket."
                 : "Registra un caso de soporte asociado a un contrato activo."}
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveTicket} className="space-y-3.5 mt-2">
-            <ContractSearchSelector
-              selectedContract={selectedContractForModal}
-              showDiagnostic={true}
-              onSelect={(contract) => {
-                setSelectedContractForModal(contract);
-                setEditingTicket((prev) => ({
-                  ...prev,
-                  contractId: contract?.id || "",
-                }));
-              }}
-              onSearchServer={async (query) => {
-                const res = await getContracts({
-                  brandId: activeBrandId,
-                  search: query,
-                  pageSize: 10,
-                });
-                return res.success && res.data ? res.data.items : [];
-              }}
-              label={t("tickets.labelContract", "Contrato de Servicio")}
-              required
-            />
+          <form
+            onSubmit={handleSaveTicket}
+            className="flex-1 overflow-y-auto p-5 space-y-4"
+          >
+            {editingTicket.id && selectedContractForModal ? (
+              <div
+                className={cn(
+                  "p-3.5 rounded-xl border space-y-2",
+                  "bg-zinc-50/80 dark:bg-zinc-900/60",
+                  "border-zinc-200 dark:border-zinc-800"
+                )}
+              >
+                <div>
+                  <span
+                    className={cn(
+                      "text-[11px] font-bold uppercase tracking-wider",
+                      "text-zinc-500 block"
+                    )}
+                  >
+                    {t("tickets.labelContract", "Contrato de Servicio")}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-zinc-400 block text-[10px]">
+                      {t("tickets.contractNumber", "Contrato #")}
+                    </span>
+                    <span
+                      className={cn(
+                        "font-mono font-bold text-emerald-600",
+                        "dark:text-emerald-400"
+                      )}
+                    >
+                      #{selectedContractForModal.contractNumber}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-400 block text-[10px]">
+                      {t("tickets.subscriber", "Titular")}
+                    </span>
+                    <span
+                      className={cn(
+                        "font-semibold text-zinc-900 dark:text-zinc-100",
+                        "truncate block"
+                      )}
+                    >
+                      {selectedContractForModal.client?.fullName}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-400 block text-[10px]">
+                      PPPoE / IP
+                    </span>
+                    <span className="font-mono text-zinc-700 dark:text-zinc-300">
+                      {selectedContractForModal.pppoeUser || "N/D"}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-400 block text-[10px]">
+                      {t("tickets.node", "Nodo")}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-zinc-700 dark:text-zinc-300 truncate block"
+                      )}
+                    >
+                      {selectedContractForModal.node?.name || "Sin nodo"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <ContractSearchSelector
+                selectedContract={selectedContractForModal}
+                showDiagnostic={true}
+                onSelect={(contract) => {
+                  setSelectedContractForModal(contract);
+                  setEditingTicket((prev) => ({
+                    ...prev,
+                    contractId: contract?.id || "",
+                  }));
+                }}
+                onSearchServer={async (query) => {
+                  const res = await getContracts({
+                    brandId: activeBrandId,
+                    search: query,
+                    pageSize: 10,
+                  });
+                  return res.success && res.data ? res.data.items : [];
+                }}
+                label={t("tickets.labelContract", "Contrato de Servicio")}
+                required
+              />
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -1776,6 +2020,7 @@ function TicketsTableContent() {
               <textarea
                 required
                 rows={4}
+                maxLength={2000}
                 placeholder="Describe el reporte del abonado o diagnóstico realizado..."
                 value={editingTicket.description}
                 onChange={(e) =>
@@ -1792,7 +2037,13 @@ function TicketsTableContent() {
               />
             </div>
 
-            <DialogFooter className="pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <DialogFooter
+              className={cn(
+                "p-4 border-t border-zinc-100 dark:border-zinc-800",
+                "bg-zinc-50/60 dark:bg-zinc-900/60 shrink-0",
+                "flex items-center justify-end gap-2"
+              )}
+            >
               <Button
                 type="button"
                 variant="outline"

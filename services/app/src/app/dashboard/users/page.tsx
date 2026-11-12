@@ -1151,11 +1151,14 @@ function UsersTableContent() {
       <Dialog open={isRolesModalOpen} onOpenChange={setIsRolesModalOpen}>
         <DialogContent
           className={
-            "sm:max-w-2xl rounded-3xl p-6 shadow-2xl border-zinc-200/80 " +
-            "dark:border-zinc-800/80 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl"
+            "sm:max-w-2xl max-h-[88vh] flex flex-col rounded-3xl p-6 " +
+            "shadow-2xl border-zinc-200/80 dark:border-zinc-800/80 " +
+            "bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl"
           }
         >
-          <DialogHeader className="pb-3 border-b border-zinc-100 dark:border-zinc-800/60">
+          <DialogHeader
+            className="pb-3 border-b border-zinc-100 dark:border-zinc-800/60 shrink-0"
+          >
             <div className="flex items-center gap-3">
               <div
                 className={
@@ -1184,7 +1187,7 @@ function UsersTableContent() {
             </div>
           </DialogHeader>
 
-          <div className="space-y-3.5 pt-2">
+          <div className="space-y-3.5 pt-2 overflow-y-auto pr-1">
             {/* SUPER_ADMIN Card */}
             <div
               className={
@@ -1369,6 +1372,9 @@ function UsersTableContent() {
                   "Conciliación Bancaria",
                   "Cuentas de Clientes",
                   "Avisos de Cobro",
+                  "Promesas de Pago",
+                  "Reconexión / Corte Cartera",
+                  "Tickets de Cobranza",
                 ].map((cap) => (
                   <span
                     key={cap}
@@ -1571,6 +1577,7 @@ function UsersTableContent() {
               </Label>
               <Input
                 {...createForm.register("name")}
+                maxLength={100}
                 placeholder="Ej. Juan Pérez"
                 className="rounded-xl h-10 text-xs"
               />
@@ -1588,6 +1595,7 @@ function UsersTableContent() {
               <Input
                 type="email"
                 {...createForm.register("email")}
+                maxLength={255}
                 placeholder="juan@empresa.com"
                 className="rounded-xl h-10 text-xs"
               />
@@ -1605,6 +1613,7 @@ function UsersTableContent() {
               <Input
                 type="password"
                 {...createForm.register("password")}
+                maxLength={100}
                 placeholder="••••••••"
                 className="rounded-xl h-10 text-xs font-mono"
               />
@@ -1778,6 +1787,7 @@ function UsersTableContent() {
               </Label>
               <Input
                 {...updateForm.register("name")}
+                maxLength={100}
                 className="rounded-xl h-10 text-xs"
               />
               {updateForm.formState.errors.name && (
@@ -1794,6 +1804,7 @@ function UsersTableContent() {
               <Input
                 type="email"
                 {...updateForm.register("email")}
+                maxLength={255}
                 className="rounded-xl h-10 text-xs"
               />
               {updateForm.formState.errors.email && (
@@ -1813,6 +1824,7 @@ function UsersTableContent() {
               <Input
                 type="password"
                 {...updateForm.register("password")}
+                maxLength={100}
                 placeholder="••••••••"
                 className="rounded-xl h-10 text-xs font-mono"
               />

@@ -28,6 +28,8 @@ import {
   Power,
   PowerOff,
   User,
+  Link2,
+  MessageCircle,
 } from "lucide-react";
 import { useBrand } from "@/context/brand-context";
 import { useTranslation } from "@/components/providers/i18n-provider";
@@ -40,6 +42,7 @@ import {
   bulkDeletePayments,
   generateMonthlyInvoicesAction,
 } from "@/actions/billing";
+import { getContractPaymentLinkAction } from "@/actions/portal";
 import { getContracts } from "@/actions/contracts";
 import type {
   Payment,
@@ -489,6 +492,49 @@ function BillingTableContent() {
     }
   };
 
+  const handleCopyPaymentLink = async (contractId: string) => {
+    try {
+      const res = await getContractPaymentLinkAction(contractId);
+      if (res.success && res.data?.url) {
+        await navigator.clipboard.writeText(res.data.url);
+        toast.success(
+          t(
+            "billing.paymentLinkCopied",
+            "Link Mágico de Pago copiado al portapapeles."
+          )
+        );
+      } else {
+        toast.error(res.error || "No se pudo generar el enlace de pago.");
+      }
+    } catch {
+      toast.error("Error al copiar el enlace de pago.");
+    }
+  };
+
+  const handleSendPaymentLinkWhatsApp = async (payment: Payment) => {
+    try {
+      const res = await getContractPaymentLinkAction(payment.contractId);
+      if (res.success && res.data?.url) {
+        const phone =
+          payment.contract?.client?.phonePrimary?.replace(/\D/g, "") || "";
+        const clientName =
+          payment.contract?.client?.fullName || "Abonado";
+        const message =
+          `Hola ${clientName}, te compartimos tu enlace de pago sin ` +
+          `contraseñas para tu factura de internet: ${res.data.url}`;
+        const cleanPhone = phone.startsWith("57") ? phone.slice(2) : phone;
+        const waUrl = phone
+          ? `https://wa.me/57${cleanPhone}?text=${encodeURIComponent(message)}`
+          : `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+        window.open(waUrl, "_blank");
+      } else {
+        toast.error(res.error || "No se pudo generar el enlace de pago.");
+      }
+    } catch {
+      toast.error("Error al abrir WhatsApp.");
+    }
+  };
+
   const buildPaymentRowActions = (payment: Payment): ActionDropdownItem[] => {
     const isApproved = payment.status === "APROBADO";
     return [
@@ -496,6 +542,19 @@ function BillingTableContent() {
         label: t("billing.actionViewReceipt", "Ver Recibo Digital"),
         icon: FileText,
         onClick: () => setReceiptPayment(payment),
+      },
+      {
+        label: t("billing.actionCopyPaymentLink", "Copiar Link de Pago"),
+        icon: Link2,
+        onClick: () => handleCopyPaymentLink(payment.contractId),
+      },
+      {
+        label: t(
+          "billing.actionSendPaymentLink",
+          "Enviar Link por WhatsApp"
+        ),
+        icon: MessageCircle,
+        onClick: () => handleSendPaymentLinkWhatsApp(payment),
       },
       {
         label: t("billing.actionEdit", "Editar Recaudo"),
@@ -1615,6 +1674,7 @@ function BillingTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={20}
                   placeholder="ej. 2026-11"
                   value={editingPayment.periodBilled}
                   onChange={(e) =>
@@ -1709,6 +1769,7 @@ function BillingTableContent() {
                 )}
               </Label>
               <Input
+                maxLength={100}
                 placeholder="ej. M1042981"
                 value={editingPayment.externalReference}
                 onChange={(e) =>
@@ -1726,6 +1787,7 @@ function BillingTableContent() {
                 {t("billing.labelNotes", "Observaciones")}
               </Label>
               <Input
+                maxLength={300}
                 placeholder="ej. Pago puntual en oficina central"
                 value={editingPayment.notes}
                 onChange={(e) =>

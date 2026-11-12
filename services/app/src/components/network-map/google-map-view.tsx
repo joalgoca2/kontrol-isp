@@ -87,10 +87,15 @@ export function GoogleMapView({
       // Add markers with strict coordinate validation
       points.forEach((point) => {
         if (
+          !point ||
           typeof point.latitude !== "number" ||
           typeof point.longitude !== "number" ||
-          isNaN(point.latitude) ||
-          isNaN(point.longitude)
+          !Number.isFinite(point.latitude) ||
+          !Number.isFinite(point.longitude) ||
+          point.latitude < -90 ||
+          point.latitude > 90 ||
+          point.longitude < -180 ||
+          point.longitude > 180
         ) {
           return;
         }
@@ -107,25 +112,29 @@ export function GoogleMapView({
 
         const isSelected = selectedPoint?.id === point.id;
 
-        const marker = new gMaps.Marker({
-          position: { lat: point.latitude, lng: point.longitude },
-          map: mapInstanceRef.current,
-          title: `#${point.contractNumber} - ${point.clientName}`,
-          icon: {
-            path: gMaps.SymbolPath.CIRCLE,
-            fillColor,
-            fillOpacity: 0.95,
-            strokeColor: isSelected ? "#ffffff" : "#18181b",
-            strokeWeight: isSelected ? 3 : 1.5,
-            scale: isSelected ? 9 : 6.5,
-          },
-        });
+        try {
+          const marker = new gMaps.Marker({
+            position: { lat: point.latitude, lng: point.longitude },
+            map: mapInstanceRef.current,
+            title: `#${point.contractNumber} - ${point.clientName}`,
+            icon: {
+              path: gMaps.SymbolPath.CIRCLE,
+              fillColor,
+              fillOpacity: 0.95,
+              strokeColor: isSelected ? "#ffffff" : "#18181b",
+              strokeWeight: isSelected ? 3 : 1.5,
+              scale: isSelected ? 9 : 6.5,
+            },
+          });
 
-        marker.addListener("click", () => {
-          onSelectPoint(point);
-        });
+          marker.addListener("click", () => {
+            onSelectPoint(point);
+          });
 
-        markersRef.current.push(marker);
+          markersRef.current.push(marker);
+        } catch (_err) {
+          // Catch marker instantiation errors
+        }
       });
     }
 
@@ -162,19 +171,27 @@ export function GoogleMapView({
 
   // Center on selected point with coordinate validation
   useEffect(() => {
-    if (
-      selectedPoint &&
-      mapInstanceRef.current &&
-      typeof selectedPoint.latitude === "number" &&
-      typeof selectedPoint.longitude === "number" &&
-      !isNaN(selectedPoint.latitude) &&
-      !isNaN(selectedPoint.longitude)
-    ) {
-      mapInstanceRef.current.panTo({
-        lat: selectedPoint.latitude,
-        lng: selectedPoint.longitude,
-      });
-      mapInstanceRef.current.setZoom(16);
+    try {
+      if (
+        selectedPoint &&
+        mapInstanceRef.current &&
+        typeof selectedPoint.latitude === "number" &&
+        typeof selectedPoint.longitude === "number" &&
+        Number.isFinite(selectedPoint.latitude) &&
+        Number.isFinite(selectedPoint.longitude) &&
+        selectedPoint.latitude >= -90 &&
+        selectedPoint.latitude <= 90 &&
+        selectedPoint.longitude >= -180 &&
+        selectedPoint.longitude <= 180
+      ) {
+        mapInstanceRef.current.panTo({
+          lat: selectedPoint.latitude,
+          lng: selectedPoint.longitude,
+        });
+        mapInstanceRef.current.setZoom(16);
+      }
+    } catch (_err) {
+      // Prevent panTo runtime exception
     }
   }, [selectedPoint]);
 

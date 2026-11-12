@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
   Users,
@@ -19,10 +20,13 @@ import {
   LayoutGrid,
   Edit2,
   Trash2,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "@/components/providers/i18n-provider";
 import { useBrand } from "@/context/brand-context";
+import { hasPermission } from "@/lib/permissions";
+import { useIsMobile } from "@/lib/use-mobile";
 import {
   getClientsPaginated,
   saveClient,
@@ -81,19 +85,31 @@ function ClientsTableContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
   const { t } = useTranslation();
   const { activeBrandId, activeBrand } = useBrand();
+
+  const canManageClients = hasPermission(
+    session?.user,
+    "clients:manage"
+  );
+  const canDeleteClients = hasPermission(
+    session?.user,
+    "clients:delete"
+  );
 
   const currentPage = Math.max(
     1,
     parseInt(searchParams.get("page") ?? "1", 10)
   );
   const currentSearch = searchParams.get("search") ?? "";
-  const currentStatus = searchParams.get("status") ?? "all";
+  const currentStatus = searchParams.get("status") ?? "active";
   const currentDocType = searchParams.get("documentType") ?? "all";
   const currentHasContracts = searchParams.get("hasContracts") ?? "";
+  const isMobile = useIsMobile();
+  const rawView = searchParams.get("view");
   const currentView = (
-    searchParams.get("view") === "grid" ? "grid" : "list"
+    rawView ?? (isMobile ? "grid" : "list")
   ) as "list" | "grid";
 
   const [clients, setClients] = useState<Client[]>([]);
@@ -148,7 +164,7 @@ function ClientsTableContent() {
       }
 
       if (updates.status !== undefined) {
-        if (updates.status === "all" || !updates.status) {
+        if (!updates.status) {
           params.delete("status");
         } else {
           params.set("status", updates.status);
@@ -172,7 +188,7 @@ function ClientsTableContent() {
       }
 
       if (updates.view !== undefined) {
-        if (updates.view === "list") {
+        if (!updates.view) {
           params.delete("view");
         } else {
           params.set("view", updates.view);
@@ -473,23 +489,25 @@ function ClientsTableContent() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={handleOpenCreate}
-            className={cn(
-              "rounded-xl gap-2 text-xs font-semibold bg-emerald-600",
-              "hover:bg-emerald-700 text-white shadow-xs"
-            )}
-          >
-            <Plus className="h-4 w-4" />
-            {t("clients.newClient", "Nuevo Titular")}
-          </Button>
-        </div>
+        {canManageClients && (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleOpenCreate}
+              className={cn(
+                "rounded-xl gap-2 text-xs font-semibold bg-emerald-600",
+                "hover:bg-emerald-700 text-white shadow-xs"
+              )}
+            >
+              <Plus className="h-4 w-4" />
+              {t("clients.newClient", "Nuevo Titular")}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Filter Metric Cards Standard */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Total Abonados */}
         <Card
           onClick={() =>
@@ -505,20 +523,34 @@ function ClientsTableContent() {
             isTotalCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-zinc-500 dark:text-zinc-400",
-                  "uppercase tracking-wider"
+                  "text-[10px] sm:text-xs font-bold text-zinc-500",
+                  "dark:text-zinc-400 uppercase tracking-wider"
                 )}
               >
                 {t("clients.cardTotalTitle", "Total de Abonados")}
               </p>
-              <h3 className="text-2xl font-black text-zinc-900 dark:text-white">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : total}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-zinc-900",
+                  "dark:text-white"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  total
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t(
                   "clients.cardTotalDesc",
                   "Titulares registrados en la marca"
@@ -527,11 +559,11 @@ function ClientsTableContent() {
             </div>
             <div
               className={cn(
-                "p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800",
-                "text-zinc-600 dark:text-zinc-300"
+                "p-2 sm:p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800",
+                "text-zinc-600 dark:text-zinc-300 shrink-0"
               )}
             >
-              <Users className="h-5 w-5" />
+              <Users className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
@@ -549,30 +581,44 @@ function ClientsTableContent() {
             isActiveCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-emerald-600",
+                  "text-[10px] sm:text-xs font-bold text-emerald-600",
                   "dark:text-emerald-400 uppercase tracking-wider"
                 )}
               >
                 {t("clients.cardActiveTitle", "Abonados Activos")}
               </p>
-              <h3 className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : activeCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-emerald-600",
+                  "dark:text-emerald-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  activeCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t("clients.cardActiveDesc", "Cuentas habilitadas en sistema")}
               </p>
             </div>
             <div
               className={cn(
-                "p-3 rounded-xl bg-emerald-500/10",
-                "text-emerald-600 dark:text-emerald-400"
+                "p-2 sm:p-3 rounded-xl bg-emerald-500/10",
+                "text-emerald-600 dark:text-emerald-400 shrink-0"
               )}
             >
-              <CheckCircle2 className="h-5 w-5" />
+              <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
@@ -590,23 +636,47 @@ function ClientsTableContent() {
             isInactiveCardActive ? cardActiveClasses : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-rose-500 uppercase tracking-wider">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-xs font-bold text-rose-500",
+                  "uppercase tracking-wider"
+                )}
+              >
                 {t("clients.cardInactiveTitle", "Abonados Inactivos")}
               </p>
-              <h3 className="text-2xl font-black text-rose-600 dark:text-rose-400">
-                {isLoading ? <Skeleton className="h-8 w-14" /> : inactiveCount}
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-rose-600",
+                  "dark:text-rose-400"
+                )}
+              >
+                {isLoading ? (
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
+                ) : (
+                  inactiveCount
+                )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t(
                   "clients.cardInactiveDesc",
                   "Titulares dados de baja o inactivos"
                 )}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-rose-500/10 text-rose-500">
-              <XCircle className="h-5 w-5" />
+            <div
+              className={cn(
+                "p-2 sm:p-3 rounded-xl bg-rose-500/10 text-rose-500",
+                "shrink-0"
+              )}
+            >
+              <XCircle className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
@@ -626,222 +696,251 @@ function ClientsTableContent() {
               : cardInactiveClasses
           )}
         >
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="space-y-1">
+          <CardContent className="p-3 sm:p-4 flex items-center justify-between">
+            <div className="space-y-0.5 sm:space-y-1">
               <p
                 className={cn(
-                  "text-xs font-bold text-amber-600",
+                  "text-[10px] sm:text-xs font-bold text-amber-600",
                   "dark:text-amber-400 uppercase tracking-wider"
                 )}
               >
                 {t("clients.cardWithoutContractsTitle", "Sin Contratos")}
               </p>
-              <h3 className="text-2xl font-black text-amber-600 dark:text-amber-400">
+              <h3
+                className={cn(
+                  "text-xl sm:text-2xl font-black text-amber-600",
+                  "dark:text-amber-400"
+                )}
+              >
                 {isLoading ? (
-                  <Skeleton className="h-8 w-14" />
+                  <Skeleton className="h-7 w-12 sm:h-8 sm:w-14" />
                 ) : (
                   withoutContractsCount
                 )}
               </h3>
-              <p className="text-[11px] text-zinc-400">
+              <p
+                className={cn(
+                  "text-[10px] sm:text-[11px] text-zinc-400 truncate",
+                  "max-w-[100px] sm:max-w-none"
+                )}
+              >
                 {t(
                   "clients.cardWithoutContractsDesc",
                   "Titulares sin servicios asignados"
                 )}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <Unlink className="h-5 w-5" />
+            <div
+              className={cn(
+                "p-2 sm:p-3 rounded-xl bg-amber-500/10 text-amber-600",
+                "dark:text-amber-400 shrink-0"
+              )}
+            >
+              <Unlink className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Filter and Search Bar with View Switcher */}
-      <div
-        className={cn(
-          "flex flex-col md:flex-row gap-3 items-stretch",
-          "md:items-center justify-between"
-        )}
-      >
-        <form onSubmit={handleSearchSubmit} className="relative flex-1">
-          <button
-            type="submit"
-            aria-label={t("common.search", "Buscar")}
-            className={cn(
-              "absolute left-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md",
-              "text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400",
-              "transition-colors cursor-pointer"
-            )}
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder={t(
-              "clients.searchPlaceholder",
-              "Buscar por nombre, documento, teléfono, correo o contrato..."
-            )}
-            className={cn(
-              "pl-9 pr-9 rounded-xl text-xs h-10 border-zinc-200",
-              "dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
-            )}
-          />
-          {searchInput && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className={cn(
-                "absolute right-3 top-1/2 -translate-y-1/2",
-                "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-              )}
-            >
-              <X className="h-4 w-4" />
-            </button>
+      <div className="space-y-2.5">
+        <div
+          className={cn(
+            "flex flex-col lg:flex-row gap-2.5 items-stretch",
+            "lg:items-center justify-between"
           )}
-        </form>
-
-        <div className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
-          {/* Document Type Filter */}
-          <Select
-            value={currentDocType}
-            onValueChange={(val) =>
-              updateUrlParams({ documentType: val, page: 1 })
-            }
-          >
-            <SelectTrigger
-              className={cn(
-                "w-full sm:w-44 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
-              )}
-            >
-              <SelectValue
+        >
+          {/* Search Bar + View Mode Switcher */}
+          <div className="flex items-center gap-2 flex-1">
+            <form onSubmit={handleSearchSubmit} className="relative flex-1">
+              <button
+                type="submit"
+                aria-label={t("common.search", "Buscar")}
+                className={cn(
+                  "absolute left-3 top-1/2 -translate-y-1/2 p-0.5 rounded-md",
+                  "text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400",
+                  "transition-colors cursor-pointer"
+                )}
+              >
+                <Search className="h-4 w-4" />
+              </button>
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder={t(
-                  "clients.filterDocAll",
-                  "Todos los Documentos"
+                  "clients.searchPlaceholder",
+                  "Buscar por nombre, documento, teléfono, correo o contrato..."
+                )}
+                className={cn(
+                  "pl-9 pr-9 rounded-xl text-xs h-10 border-zinc-200",
+                  "dark:border-zinc-800 bg-white dark:bg-zinc-900/60"
                 )}
               />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("clients.filterDocAll", "Todos los Documentos")}
-              </SelectItem>
-              <SelectItem value="CC">CC (Cédula)</SelectItem>
-              <SelectItem value="NIT">NIT (Empresa)</SelectItem>
-              <SelectItem value="CE">CE (Extranjería)</SelectItem>
-              <SelectItem value="PASAPORTE">Pasaporte</SelectItem>
-            </SelectContent>
-          </Select>
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className={cn(
+                    "absolute right-3 top-1/2 -translate-y-1/2",
+                    "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                  )}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </form>
 
-          {/* Status Filter */}
-          <Select
-            value={currentStatus}
-            onValueChange={(val) => updateUrlParams({ status: val, page: 1 })}
-          >
-            <SelectTrigger
+            {/* View Mode Switcher: List vs Grid */}
+            <div
               className={cn(
-                "w-full sm:w-36 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
+                "flex items-center p-1 rounded-xl bg-zinc-100 shrink-0",
+                "dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
               )}
             >
-              <SelectValue
-                placeholder={t("clients.filterAll", "Todos los Estados")}
-              />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("clients.filterAll", "Todos los Estados")}
-              </SelectItem>
-              <SelectItem value="active">
-                {t("clients.filterActive", "Activos")}
-              </SelectItem>
-              <SelectItem value="inactive">
-                {t("clients.filterInactive", "Inactivos")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+              <button
+                type="button"
+                onClick={() => updateUrlParams({ view: "list" })}
+                title={t("clients.viewList", "Vista Lista")}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
+                  currentView === "list"
+                    ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
+                        "dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updateUrlParams({ view: "grid" })}
+                title={t("clients.viewGrid", "Vista Tarjetas")}
+                className={cn(
+                  "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
+                  currentView === "grid"
+                    ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
+                        "dark:text-emerald-400 shadow-xs font-bold"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
 
-          {/* Contracts Filter */}
-          <Select
-            value={currentHasContracts || "all"}
-            onValueChange={(val) =>
-              updateUrlParams({
-                hasContracts: val === "all" ? "" : val,
-                page: 1,
-              })
-            }
-          >
-            <SelectTrigger
-              className={cn(
-                "w-full sm:w-44 rounded-xl text-xs h-10",
-                "border-zinc-200 dark:border-zinc-800 bg-white",
-                "dark:bg-zinc-900/60 font-medium"
-              )}
-            >
-              <SelectValue
-                placeholder={t(
-                  "clients.filterContractsAll",
-                  "Todos los Contratos"
-                )}
-              />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl text-xs">
-              <SelectItem value="all">
-                {t("clients.filterContractsAll", "Todos los Contratos")}
-              </SelectItem>
-              <SelectItem value="false">
-                {t(
-                  "clients.filterWithoutContracts",
-                  "Sin Contratos (Libres)"
-                )}
-              </SelectItem>
-              <SelectItem value="true">
-                {t(
-                  "clients.filterWithContracts",
-                  "Con Contratos Vinculados"
-                )}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Select Dropdown Filters */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-center">
+            {/* Document Type Filter */}
+            <div className="w-full sm:w-44">
+              <Select
+                value={currentDocType}
+                onValueChange={(val) =>
+                  updateUrlParams({ documentType: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "clients.filterDocAll",
+                      "Todos los Documentos"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("clients.filterDocAll", "Todos los Documentos")}
+                  </SelectItem>
+                  <SelectItem value="CC">CC (Cédula)</SelectItem>
+                  <SelectItem value="NIT">NIT (Empresa)</SelectItem>
+                  <SelectItem value="CE">CE (Extranjería)</SelectItem>
+                  <SelectItem value="PASAPORTE">Pasaporte</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* View Mode Switcher: List vs Grid */}
-          <div
-            className={cn(
-              "flex items-center p-1 rounded-xl bg-zinc-100",
-              "dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60"
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => updateUrlParams({ view: "list" })}
-              title={t("clients.viewList", "Vista Lista")}
-              className={cn(
-                "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
-                currentView === "list"
-                  ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
-                      "dark:text-emerald-400 shadow-xs font-bold"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              )}
-            >
-              <List className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => updateUrlParams({ view: "grid" })}
-              title={t("clients.viewGrid", "Vista Tarjetas")}
-              className={cn(
-                "p-1.5 rounded-lg text-xs transition-all flex items-center gap-1",
-                currentView === "grid"
-                  ? "bg-white dark:bg-zinc-900 text-emerald-600 " +
-                      "dark:text-emerald-400 shadow-xs font-bold"
-                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-              )}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
+            {/* Status Filter */}
+            <div className="w-full sm:w-36">
+              <Select
+                value={currentStatus}
+                onValueChange={(val) =>
+                  updateUrlParams({ status: val, page: 1 })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t("clients.filterAll", "Todos los Estados")}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("clients.filterAll", "Todos los Estados")}
+                  </SelectItem>
+                  <SelectItem value="active">
+                    {t("clients.filterActive", "Activos")}
+                  </SelectItem>
+                  <SelectItem value="inactive">
+                    {t("clients.filterInactive", "Inactivos")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Contracts Filter */}
+            <div className="col-span-2 sm:col-span-1 w-full sm:w-44">
+              <Select
+                value={currentHasContracts || "all"}
+                onValueChange={(val) =>
+                  updateUrlParams({
+                    hasContracts: val === "all" ? "" : val,
+                    page: 1,
+                  })
+                }
+              >
+                <SelectTrigger
+                  className={cn(
+                    "w-full rounded-xl text-xs h-10",
+                    "border-zinc-200 dark:border-zinc-800 bg-white",
+                    "dark:bg-zinc-900/60 font-medium"
+                  )}
+                >
+                  <SelectValue
+                    placeholder={t(
+                      "clients.filterContractsAll",
+                      "Todos los Contratos"
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-xs">
+                  <SelectItem value="all">
+                    {t("clients.filterContractsAll", "Todos los Contratos")}
+                  </SelectItem>
+                  <SelectItem value="false">
+                    {t(
+                      "clients.filterWithoutContracts",
+                      "Sin Contratos (Libres)"
+                    )}
+                  </SelectItem>
+                  <SelectItem value="true">
+                    {t(
+                      "clients.filterWithContracts",
+                      "Con Contratos Vinculados"
+                    )}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>
@@ -978,26 +1077,42 @@ function ClientsTableContent() {
                           `/dashboard/contracts?search=${c.documentNumber}`
                         ),
                     },
-                    {
-                      label: t("clients.actionEdit", "Editar Titular"),
-                      icon: Edit2,
-                      onClick: () => handleOpenEdit(c),
-                    },
-                    {
-                      label: c.isActive
-                        ? t("clients.actionDeactivate", "Desactivar Titular")
-                        : t("clients.actionActivate", "Activar Titular"),
-                      icon: c.isActive ? XCircle : CheckCircle2,
-                      variant: c.isActive ? "default" : "emerald",
-                      onClick: () => handleToggleStatus(c),
-                    },
-                    {
-                      label: t("clients.actionDelete", "Eliminar Titular"),
-                      icon: Trash2,
-                      variant: "destructive",
-                      onClick: () => setDeletingClientId(c.id),
-                      disabled: contractsCount > 0,
-                    },
+                    ...(canManageClients
+                      ? [
+                          {
+                            label: t("clients.actionEdit", "Editar Titular"),
+                            icon: Edit2,
+                            onClick: () => handleOpenEdit(c),
+                          },
+                          {
+                            label: c.isActive
+                              ? t(
+                                  "clients.actionDeactivate",
+                                  "Desactivar Titular"
+                                )
+                              : t("clients.actionActivate", "Activar Titular"),
+                            icon: c.isActive ? XCircle : CheckCircle2,
+                            variant: (c.isActive ? "default" : "emerald") as
+                              | "default"
+                              | "emerald",
+                            onClick: () => handleToggleStatus(c),
+                          },
+                          ...(canDeleteClients
+                            ? [
+                                {
+                                  label: t(
+                                    "clients.actionDelete",
+                                    "Eliminar Titular"
+                                  ),
+                                  icon: Trash2,
+                                  variant: "destructive" as const,
+                                  onClick: () => setDeletingClientId(c.id),
+                                  disabled: contractsCount > 0,
+                                },
+                              ]
+                            : []),
+                        ]
+                      : []),
                   ];
 
                   return (
@@ -1041,14 +1156,23 @@ function ClientsTableContent() {
                             )}
                           >
                             {c.clientCode && (
-                              <span className="text-emerald-600 dark:text-emerald-400 mr-1 font-mono">
+                              <span
+                                className={cn(
+                                  "text-emerald-600 dark:text-emerald-400",
+                                  "mr-1 font-mono"
+                                )}
+                              >
                                 #{c.clientCode} &bull;
                               </span>
                             )}
                             {c.fullName}
                           </span>
                           {c.address && (
-                            <span className="text-[11px] text-zinc-400 truncate max-w-[200px]">
+                            <span
+                              className={cn(
+                                "text-[11px] text-zinc-400 truncate max-w-[200px]"
+                              )}
+                            >
                               {c.address}
                             </span>
                           )}
@@ -1221,26 +1345,42 @@ function ClientsTableContent() {
                         `/dashboard/contracts?search=${c.documentNumber}`
                       ),
                   },
-                  {
-                    label: t("clients.actionEdit", "Editar Titular"),
-                    icon: Edit2,
-                    onClick: () => handleOpenEdit(c),
-                  },
-                  {
-                    label: c.isActive
-                      ? t("clients.actionDeactivate", "Desactivar Titular")
-                      : t("clients.actionActivate", "Activar Titular"),
-                    icon: c.isActive ? XCircle : CheckCircle2,
-                    variant: c.isActive ? "default" : "emerald",
-                    onClick: () => handleToggleStatus(c),
-                  },
-                  {
-                    label: t("clients.actionDelete", "Eliminar Titular"),
-                    icon: Trash2,
-                    variant: "destructive",
-                    onClick: () => setDeletingClientId(c.id),
-                    disabled: contractsCount > 0,
-                  },
+                  ...(canManageClients
+                    ? [
+                        {
+                          label: t("clients.actionEdit", "Editar Titular"),
+                          icon: Edit2,
+                          onClick: () => handleOpenEdit(c),
+                        },
+                        {
+                          label: c.isActive
+                            ? t(
+                                "clients.actionDeactivate",
+                                "Desactivar Titular"
+                              )
+                            : t("clients.actionActivate", "Activar Titular"),
+                          icon: c.isActive ? XCircle : CheckCircle2,
+                          variant: (c.isActive ? "default" : "emerald") as
+                            | "default"
+                            | "emerald",
+                          onClick: () => handleToggleStatus(c),
+                        },
+                        ...(canDeleteClients
+                          ? [
+                              {
+                                label: t(
+                                  "clients.actionDelete",
+                                  "Eliminar Titular"
+                                ),
+                                icon: Trash2,
+                                variant: "destructive" as const,
+                                onClick: () => setDeletingClientId(c.id),
+                                disabled: contractsCount > 0,
+                              },
+                            ]
+                          : []),
+                      ]
+                    : []),
                 ];
 
                 return (
@@ -1323,23 +1463,60 @@ function ClientsTableContent() {
                         </span>
                       </div>
 
+                      {/* Direct Contact Buttons */}
+                      {c.phonePrimary && (
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          <a
+                            href={`tel:${c.phonePrimary}`}
+                            className={cn(
+                              "flex items-center justify-center gap-1.5 py-1.5 px-2",
+                              "rounded-xl text-xs font-semibold bg-zinc-100 hover:bg-zinc-200",
+                              "dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700",
+                              "dark:text-zinc-200 transition-colors"
+                            )}
+                          >
+                            <Phone className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>{t("common.call", "Llamar")}</span>
+                          </a>
+                          <a
+                            href={`https://wa.me/57${c.phonePrimary.replace(/\D/g, "")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={cn(
+                              "flex items-center justify-center gap-1.5 py-1.5 px-2",
+                              "rounded-xl text-xs font-semibold bg-emerald-500/10",
+                              "hover:bg-emerald-500/20 text-emerald-600",
+                              "dark:text-emerald-400 border border-emerald-500/20",
+                              "transition-colors"
+                            )}
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            <span>WhatsApp</span>
+                          </a>
+                        </div>
+                      )}
+
                       {/* Details Box */}
                       <div
                         className={cn(
-                          "mt-4 p-3 rounded-xl bg-zinc-50",
+                          "mt-3 p-3 rounded-xl bg-zinc-50",
                           "dark:bg-zinc-950/60 border border-zinc-200/70",
                           "dark:border-zinc-800/80 space-y-2 text-xs"
                         )}
                       >
                         <div className="flex justify-between items-center">
-                          <span className="text-zinc-500">Teléfono:</span>
+                          <span className="text-zinc-500">
+                            {t("clients.phoneLabel", "Teléfono")}:
+                          </span>
                           <span className="font-semibold text-zinc-800 dark:text-zinc-200">
                             {c.phonePrimary}
                           </span>
                         </div>
                         {c.email && (
                           <div className="flex justify-between items-center">
-                            <span className="text-zinc-500">Correo:</span>
+                            <span className="text-zinc-500">
+                              {t("clients.emailLabel", "Correo")}:
+                            </span>
                             <span
                               className={cn(
                                 "text-zinc-700 dark:text-zinc-300",
@@ -1350,62 +1527,55 @@ function ClientsTableContent() {
                             </span>
                           </div>
                         )}
-                        <div
-                          className={cn(
-                            "flex justify-between items-center pt-1",
-                            "border-t border-zinc-200/50 dark:border-zinc-800/50"
-                          )}
-                        >
-                          <span className="text-zinc-500">Contratos:</span>
-                          <Link
-                            href={`/dashboard/contracts?search=${c.documentNumber}`}
-                          >
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] font-bold px-2 py-0.5 hover:bg-emerald-500/20"
-                            >
-                              {contractsCount}{" "}
-                              {contractsCount === 1 ? "servicio" : "servicios"}
-                            </Badge>
-                          </Link>
-                        </div>
                       </div>
-                    </div>
 
-                    {/* Actions Footer */}
-                    <div
-                      className={cn(
-                        "mt-4 pt-4 border-t border-zinc-100",
-                        "dark:border-zinc-800/60 flex items-center",
-                        "justify-between gap-2"
-                      )}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleOpenEdit(c)}
-                        className="text-xs font-semibold rounded-xl"
-                      >
-                        {t("common.edit", "Editar")}
-                      </Button>
-
+                      {/* Main Action: Link to Contracts & Diagnostic */}
                       <Link
-                        href={`/dashboard/contracts?search=${c.documentNumber}`}
+                        href={`/dashboard/contracts?search=${encodeURIComponent(
+                          c.documentNumber
+                        )}`}
+                        className="mt-3 block"
                       >
                         <Button
                           size="sm"
-                          variant="outline"
                           className={cn(
-                            "rounded-xl gap-1.5 text-xs font-bold",
-                            "border-emerald-500/30 text-emerald-600",
-                            "dark:text-emerald-400 hover:bg-emerald-500/10"
+                            "w-full rounded-xl gap-1.5 text-xs font-bold",
+                            "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
                           )}
                         >
                           <Network className="h-3.5 w-3.5" />
-                          {t("clients.actionViewContracts", "Ver Contratos")}
+                          {contractsCount === 0
+                            ? t("clients.noContractsBtn", "Sin Enlaces")
+                            : `${t(
+                                "clients.viewContractsBtn",
+                                "Ver Enlaces"
+                              )} (${contractsCount})`}
                         </Button>
                       </Link>
                     </div>
+
+                    {/* Actions Footer */}
+                    {canManageClients && (
+                      <div
+                        className={cn(
+                          "mt-3 pt-3 border-t border-zinc-100",
+                          "dark:border-zinc-800/60 flex items-center justify-end"
+                        )}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEdit(c)}
+                          className={cn(
+                            "text-xs font-semibold rounded-xl text-zinc-600",
+                            "dark:text-zinc-400"
+                          )}
+                        >
+                          <Edit2 className="h-3.5 w-3.5 mr-1" />
+                          {t("common.edit", "Editar")}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1427,7 +1597,7 @@ function ClientsTableContent() {
         onClearSelection={() => setSelectedClientIds([])}
         onActivate={handleBulkActivate}
         onDeactivate={handleBulkDeactivate}
-        onDelete={handleBulkDelete}
+        onDelete={canDeleteClients ? handleBulkDelete : undefined}
         resourceName="titulares"
         isLoading={isActionLoading}
       />
@@ -1476,6 +1646,7 @@ function ClientsTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={25}
                   placeholder="ej. 1024567890"
                   value={editingClient?.documentNumber || ""}
                   onChange={(e) =>
@@ -1498,6 +1669,7 @@ function ClientsTableContent() {
               </Label>
               <Input
                 required
+                maxLength={120}
                 placeholder="ej. Juan Carlos González"
                 value={editingClient?.fullName || ""}
                 onChange={(e) =>
@@ -1517,6 +1689,7 @@ function ClientsTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={20}
                   placeholder="ej. 3101234567"
                   value={editingClient?.phonePrimary || ""}
                   onChange={(e) =>
@@ -1534,6 +1707,7 @@ function ClientsTableContent() {
                   {t("clients.labelPhoneSecondary", "Teléfono Secundario")}
                 </Label>
                 <Input
+                  maxLength={20}
                   placeholder="ej. 3159876543"
                   value={editingClient?.phoneSecondary || ""}
                   onChange={(e) =>
@@ -1553,6 +1727,7 @@ function ClientsTableContent() {
               </Label>
               <Input
                 type="email"
+                maxLength={100}
                 placeholder="ej. cliente@gmail.com"
                 value={editingClient?.email || ""}
                 onChange={(e) =>
@@ -1570,6 +1745,7 @@ function ClientsTableContent() {
                 {t("clients.labelAddress", "Dirección Fiscal / Principal")}
               </Label>
               <Input
+                maxLength={150}
                 placeholder="ej. Cra 5 # 12-34"
                 value={editingClient?.address || ""}
                 onChange={(e) =>
@@ -1588,6 +1764,7 @@ function ClientsTableContent() {
                   {t("clients.labelCity", "Ciudad")}
                 </Label>
                 <Input
+                  maxLength={60}
                   value={editingClient?.city || "Soacha"}
                   onChange={(e) =>
                     setEditingClient({
@@ -1604,6 +1781,7 @@ function ClientsTableContent() {
                   {t("clients.labelDepartment", "Departamento")}
                 </Label>
                 <Input
+                  maxLength={60}
                   value={editingClient?.department || "Cundinamarca"}
                   onChange={(e) =>
                     setEditingClient({

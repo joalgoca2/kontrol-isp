@@ -73,3 +73,63 @@ export interface MikrotikLiveDiagnostic {
   trafficSummary?: string;
   trafficRecommendation?: string;
 }
+
+export interface MikrotikSecret {
+  id: string;
+  name: string;
+  service?: string;
+  profile?: string;
+  disabled: boolean;
+  comment?: string;
+  remoteAddress?: string;
+  lastCallerId?: string;
+  lastLoggedOut?: string;
+  lastDisconnectReason?: string;
+}
+
+export interface ContractAuditOrphanInCrm {
+  contractId: string;
+  contractNumber: string;
+  clientName: string;
+  clientPhone?: string | null;
+  pppoeUser: string;
+  pppoePassword?: string | null;
+  planName?: string | null;
+  planProfile?: string | null;
+  serviceStatus: string;
+  billingStatus: string;
+  detectedRetiredInRouter?: boolean;
+  routerSecretName?: string;
+}
+
+export interface ContractAuditOrphanInRouter {
+  name: string;
+  profile?: string;
+  disabled: boolean;
+  comment?: string;
+  remoteAddress?: string;
+  lastLoggedOut?: string;
+}
+
+export interface ContractAuditSynced {
+  contractId: string;
+  contractNumber: string;
+  clientName: string;
+  pppoeUser: string;
+  serviceStatus: string;
+  disabledInRouter: boolean;
+  profileInRouter?: string;
+}
+
+export interface ContractAuditResult {
+  nodeId: string;
+  nodeName: string;
+  totalCrmActive: number;
+  totalRouterSecrets: number;
+  syncedCount: number;
+  detectedRetiredCount: number;
+  orphansInCrm: ContractAuditOrphanInCrm[];
+  orphansInRouter: ContractAuditOrphanInRouter[];
+  synced: ContractAuditSynced[];
+}
+

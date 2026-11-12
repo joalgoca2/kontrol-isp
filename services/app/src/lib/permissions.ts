@@ -24,7 +24,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   {
     path: "/dashboard/nodes",
-    allowedRoles: ["SUPER_ADMIN", "ADMIN", "TECHNICIAN"],
+    allowedRoles: ["SUPER_ADMIN", "ADMIN"],
   },
   {
     path: "/dashboard/network-map",
@@ -32,7 +32,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   {
     path: "/dashboard/plans",
-    allowedRoles: ["SUPER_ADMIN", "ADMIN", "BILLING", "SUPPORT", "TECHNICIAN"],
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "BILLING"],
   },
   {
     path: "/dashboard/clients",
@@ -48,7 +48,7 @@ export const ROUTE_PERMISSIONS: RouteConfig[] = [
   },
   {
     path: "/dashboard/tickets",
-    allowedRoles: ["SUPER_ADMIN", "ADMIN", "TECHNICIAN", "SUPPORT"],
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "BILLING", "TECHNICIAN", "SUPPORT"],
   },
   {
     path: "/dashboard/whatsapp-chat",
@@ -80,4 +80,19 @@ export function hasRouteAccess(pathname: string, userRoles: string[]): boolean {
   return userRoles.some((role) =>
     matchedRoute.allowedRoles.includes(role as RoleName)
   );
+}
+
+/**
+ * Checks if a session user has a specific granular permission from the database.
+ * SuperAdmin automatically bypasses all permission checks.
+ */
+export function hasPermission(
+  user: { roles?: string[]; permissions?: string[] } | null | undefined,
+  requiredPermission: string
+): boolean {
+  if (!user) return false;
+  const roles = user.roles ?? [];
+  if (roles.includes("SUPER_ADMIN")) return true;
+  const permissions = user.permissions ?? [];
+  return permissions.includes(requiredPermission);
 }

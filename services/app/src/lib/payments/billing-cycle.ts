@@ -158,8 +158,9 @@ export async function grantPaymentPromise(params: {
   hours: number;
   notes?: string | null;
   actor?: string | null;
+  overrideLimit?: boolean;
 }): Promise<PaymentPromiseResult> {
-  const { contractId, hours, notes, actor } = params;
+  const { contractId, hours, notes, actor, overrideLimit } = params;
 
   const contract = await prisma.contract.findUnique({
     where: { id: contractId },
@@ -177,11 +178,77 @@ export async function grantPaymentPromise(params: {
     throw new Error("Contrato no encontrado.");
   }
 
+  // 1. Check if there is an ACTIVE and UNCONSUMED promise currently in progress
+  const openPromiseTickets = await prisma.supportTicket.findMany({
+    where: {
+      contractId: contract.id,
+      issueType: "CARTERA",
+      status: "ABIERTO",
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const now = new Date();
+  for (const tk of openPromiseTickets) {
+    const snap = tk.diagnosticSnapshot as Record<string, unknown> | null;
+    if (snap?.tipo === "PROMESA_PAGO_24H" && snap?.fechaVencimiento) {
+      const expirationDate = new Date(String(snap.fechaVencimiento));
+      if (expirationDate > now) {
+        const formattedExp = expirationDate.toLocaleString("es-CO", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        });
+        throw new Error(
+          `El contrato ya cuenta con una prórroga activa y vigente hasta ` +
+          `${formattedExp} (Ticket #${tk.ticketNumber}). No es posible ` +
+          `conceder otra prórroga consecutiva mientras esté en curso.`
+        );
+      }
+    }
+  }
+
+  // 2. Check 30-day limit (maximum 1 promise per billing cycle / 30 days)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const recentTickets = await prisma.supportTicket.findMany({
+    where: {
+      contractId: contract.id,
+      issueType: "CARTERA",
+      createdAt: { gte: thirtyDaysAgo },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const recentPromise = recentTickets.find((tk) => {
+    const snap = tk.diagnosticSnapshot as Record<string, unknown> | null;
+    return snap?.tipo === "PROMESA_PAGO_24H";
+  });
+
+  if (recentPromise && !overrideLimit) {
+    const grantedDate = new Date(recentPromise.createdAt).toLocaleDateString(
+      "es-CO",
+      { dateStyle: "medium" }
+    );
+    throw new Error(
+      `El contrato ya utilizó su prórroga permitida de este ciclo ` +
+      `(Ticket #${recentPromise.ticketNumber} concedida el ${grantedDate}). ` +
+      `La política comercial restringe a máximo 1 prórroga por mes.`
+    );
+  }
+
+  if (recentPromise && overrideLimit) {
+    if (!notes || notes.trim().length < 10) {
+      throw new Error(
+        "Para aplicar una excepción administrativa de prórroga, " +
+        "las observaciones/justificación son obligatorias (mínimo 10 caracteres)."
+      );
+    }
+  }
+
   const safeHours = Math.max(1, Math.min(168, hours));
   const limitDate = new Date(Date.now() + safeHours * 60 * 60 * 1000);
   const operatorName = actor ?? "Operador Web";
 
-  // 1. Unblock in MikroTik RouterOS if node and PPPoE user exist
+  // 3. Unblock in MikroTik RouterOS if node and PPPoE user exist
   if (contract.node && contract.pppoeUser) {
     try {
       await setClientSuspensionOnRouter(
@@ -195,7 +262,7 @@ export async function grantPaymentPromise(params: {
     }
   }
 
-  // 2. Reactivate contract in database
+  // 4. Reactivate contract in database
   await prisma.contract.update({
     where: { id: contract.id },
     data: {
@@ -205,7 +272,7 @@ export async function grantPaymentPromise(params: {
     },
   });
 
-  // 3. Create audit Support Ticket
+  // 5. Create audit Support Ticket
   const totalDebt = contract.payments.reduce((acc, p) => acc + p.amount, 0);
   const ticketNumber = `TICK-PROM-${Date.now().toString().slice(-6)}`;
   const limitFormatted = limitDate.toLocaleString("es-CO", {
@@ -213,10 +280,13 @@ export async function grantPaymentPromise(params: {
     timeStyle: "short",
   });
 
-  const desc = notes
+  const isException = Boolean(recentPromise && overrideLimit);
+  const baseDesc = notes
     ? `Prórroga de ${safeHours}h concedida por ${operatorName} ` +
       `hasta ${limitFormatted}. Nota: ${notes}`
     : `Prórroga de ${safeHours}h concedida por ${operatorName} hasta ${limitFormatted}.`;
+
+  const desc = isException ? `[EXCEPCIÓN ADMIN] ${baseDesc}` : baseDesc;
 
   const snapshot: Prisma.JsonObject = {
     tipo: "PROMESA_PAGO_24H",
@@ -226,6 +296,7 @@ export async function grantPaymentPromise(params: {
     saldoAdeudado: totalDebt,
     operador: operatorName,
     notas: notes ?? null,
+    esExcepcionAdmin: isException,
   };
 
   await prisma.supportTicket.create({
@@ -235,7 +306,7 @@ export async function grantPaymentPromise(params: {
       ticketNumber,
       channel: "PORTAL",
       issueType: "CARTERA",
-      priority: "MEDIA",
+      priority: isException ? "ALTA" : "MEDIA",
       status: "ABIERTO",
       description: desc,
       diagnosticSnapshot: snapshot,
@@ -244,7 +315,7 @@ export async function grantPaymentPromise(params: {
     },
   });
 
-  // 4. Trigger Outbound Webhook
+  // 6. Trigger Outbound Webhook
   triggerOutboundWebhook("billing", {
     event: "billing.promise_granted",
     brandId: contract.brandId,
@@ -254,6 +325,7 @@ export async function grantPaymentPromise(params: {
       hours: safeHours,
       limitDate: limitDate.toISOString(),
       ticketNumber,
+      esExcepcionAdmin: isException,
     },
   });
 

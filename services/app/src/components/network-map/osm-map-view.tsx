@@ -39,6 +39,7 @@ interface LeafletMapInstance {
     zoom: number,
     options?: unknown
   ) => LeafletMapInstance;
+  fitBounds?: (bounds: unknown, options?: unknown) => LeafletMapInstance;
   setZoom: (zoom: number) => LeafletMapInstance;
   invalidateSize: () => void;
   getSize: () => { x: number; y: number };
@@ -59,11 +60,39 @@ interface LeafletNamespace {
   ) => LeafletMarker;
   divIcon: (options?: unknown) => unknown;
   markerClusterGroup?: (options?: unknown) => LeafletMarkerClusterGroup;
+  LatLngBounds?: { prototype?: { extend?: (obj: unknown) => unknown } };
 }
 
 declare global {
   interface Window {
     L?: LeafletNamespace;
+  }
+}
+
+function patchLeafletDefensively(L: unknown) {
+  if (!L || typeof L !== "object") return;
+  const leafletObj = L as Record<string, unknown>;
+
+  const LatLngBoundsClass = leafletObj.LatLngBounds as
+    | { prototype?: { extend?: (obj: unknown) => unknown } }
+    | undefined;
+
+  if (LatLngBoundsClass?.prototype?.extend) {
+    const originalExtend = LatLngBoundsClass.prototype.extend;
+    const marker = originalExtend as { __defensivePatched?: boolean };
+    if (!marker.__defensivePatched) {
+      const patchedExtend = function (this: unknown, obj: unknown) {
+        if (!obj) return this;
+        try {
+          return originalExtend.call(this, obj);
+        } catch (_err) {
+          return this;
+        }
+      };
+      (patchedExtend as { __defensivePatched?: boolean }).__defensivePatched =
+        true;
+      LatLngBoundsClass.prototype.extend = patchedExtend;
+    }
   }
 }
 
@@ -136,10 +165,23 @@ export function OsmMapView({
       const L = window.L;
       if (!containerRef.current || !L || !isMounted || mapRef.current) return;
 
+      patchLeafletDefensively(L);
+
       const instance = L.map(containerRef.current).setView(
         [center.lat, center.lng],
         13
       );
+
+      if (instance.fitBounds) {
+        const originalFitBounds = instance.fitBounds;
+        instance.fitBounds = function (bounds: unknown, options?: unknown) {
+          try {
+            return originalFitBounds.call(this, bounds, options);
+          } catch (_err) {
+            return this;
+          }
+        };
+      }
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -150,7 +192,11 @@ export function OsmMapView({
 
       instance.whenReady(() => {
         if (!isMounted) return;
-        instance.invalidateSize();
+        try {
+          instance.invalidateSize();
+        } catch (_err) {
+          // Ignore resize errors during initial mount
+        }
         setIsReady(true);
       });
 
@@ -172,16 +218,24 @@ export function OsmMapView({
 
     return () => {
       isMounted = false;
-      if (clusterGroupRef.current) {
-        clusterGroupRef.current.clearLayers();
-        if (mapRef.current) {
-          mapRef.current.removeLayer(clusterGroupRef.current);
+      try {
+        if (clusterGroupRef.current) {
+          clusterGroupRef.current.clearLayers();
+          if (mapRef.current) {
+            mapRef.current.removeLayer(clusterGroupRef.current);
+          }
+          clusterGroupRef.current = null;
         }
-        clusterGroupRef.current = null;
+      } catch (_err) {
+        // Prevent unmount exceptions
       }
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
+      try {
+        if (mapRef.current) {
+          mapRef.current.remove();
+          mapRef.current = null;
+        }
+      } catch (_err) {
+        // Prevent map destruction exceptions during HMR
       }
       setIsReady(false);
       setIsClusterReady(false);
@@ -196,92 +250,111 @@ export function OsmMapView({
       return;
     }
 
-    // Re-use existing cluster group to avoid orphaned event listeners
-    let clusterGroup = clusterGroupRef.current;
-    if (!clusterGroup) {
-      clusterGroup = L.markerClusterGroup({
-        showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        spiderfyOnMaxZoom: true,
-        maxClusterRadius: 35,
-        disableClusteringAtZoom: 17,
-      });
-      clusterGroup.addTo(map);
-      clusterGroupRef.current = clusterGroup;
-    } else {
-      clusterGroup.clearLayers();
-    }
+    try {
+      patchLeafletDefensively(L);
 
-    const markers: LeafletMarker[] = [];
-
-    points.forEach((point) => {
-      if (
-        typeof point.latitude !== "number" ||
-        typeof point.longitude !== "number" ||
-        isNaN(point.latitude) ||
-        isNaN(point.longitude)
-      ) {
-        return;
+      // Re-use existing cluster group to avoid orphaned event listeners
+      let clusterGroup = clusterGroupRef.current;
+      if (!clusterGroup) {
+        clusterGroup = L.markerClusterGroup({
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: true,
+          spiderfyOnMaxZoom: true,
+          maxClusterRadius: 35,
+          disableClusteringAtZoom: 17,
+        });
+        clusterGroup.addTo(map);
+        clusterGroupRef.current = clusterGroup;
+      } else {
+        clusterGroup.clearLayers();
       }
 
-      const isOnline = point.serviceStatus === "ONLINE";
-      const isSuspended = point.billingStatus === "SUSPENDIDO_MORA";
+      const markers: LeafletMarker[] = [];
 
-      let fillColor = "#10b981"; // Online (emerald green)
-      if (isSuspended) {
-        fillColor = "#f59e0b"; // Suspended (amber)
-      } else if (!isOnline) {
-        fillColor = "#f43f5e"; // Offline (rose red)
+      points.forEach((point) => {
+        if (
+          !point ||
+          typeof point.latitude !== "number" ||
+          typeof point.longitude !== "number" ||
+          !Number.isFinite(point.latitude) ||
+          !Number.isFinite(point.longitude) ||
+          point.latitude < -90 ||
+          point.latitude > 90 ||
+          point.longitude < -180 ||
+          point.longitude > 180
+        ) {
+          return;
+        }
+
+        const isOnline = point.serviceStatus === "ONLINE";
+        const isSuspended = point.billingStatus === "SUSPENDIDO_MORA";
+
+        let fillColor = "#10b981"; // Online (emerald green)
+        if (isSuspended) {
+          fillColor = "#f59e0b"; // Suspended (amber)
+        } else if (!isOnline) {
+          fillColor = "#f43f5e"; // Offline (rose red)
+        }
+
+        const isSelected = selectedPoint?.id === point.id;
+        const size = isSelected ? 18 : 13;
+        const anchor = isSelected ? 9 : 6.5;
+
+        const dotIcon = L.divIcon({
+          className: "network-map-dot-icon",
+          html:
+            `<div style="` +
+            `width: ${size}px; height: ${size}px; border-radius: 50%; ` +
+            `background-color: ${fillColor}; border: 2px solid #ffffff; ` +
+            `box-shadow: 0 1px 4px rgba(0,0,0,0.45); ` +
+            `cursor: pointer; transition: transform 0.15s ease;" ` +
+            `title="${point.pppoeUser}"></div>`,
+          iconSize: [size, size],
+          iconAnchor: [anchor, anchor],
+        });
+
+        const marker = L.marker([point.latitude, point.longitude], {
+          icon: dotIcon,
+        });
+
+        // Smooth selection on click
+        marker.on("click", () => {
+          onSelectPoint(point);
+        });
+
+        markers.push(marker);
+      });
+
+      if (markers.length > 0) {
+        clusterGroup.addLayers(markers);
       }
-
-      const isSelected = selectedPoint?.id === point.id;
-      const size = isSelected ? 18 : 13;
-      const anchor = isSelected ? 9 : 6.5;
-
-      const dotIcon = L.divIcon({
-        className: "network-map-dot-icon",
-        html:
-          `<div style="` +
-          `width: ${size}px; height: ${size}px; border-radius: 50%; ` +
-          `background-color: ${fillColor}; border: 2px solid #ffffff; ` +
-          `box-shadow: 0 1px 4px rgba(0,0,0,0.45); ` +
-          `cursor: pointer; transition: transform 0.15s ease;" ` +
-          `title="${point.pppoeUser}"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [anchor, anchor],
-      });
-
-      const marker = L.marker([point.latitude, point.longitude], {
-        icon: dotIcon,
-      });
-
-      // Smooth selection on click
-      marker.on("click", () => {
-        onSelectPoint(point);
-      });
-
-      markers.push(marker);
-    });
-
-    if (markers.length > 0) {
-      clusterGroup.addLayers(markers);
+    } catch (_err) {
+      // Catch cluster calculations gracefully
     }
   }, [points, isReady, isClusterReady, selectedPoint, onSelectPoint]);
 
   // 3. Smooth flyTo focus only on explicit user request with strict coordinate validation
   useEffect(() => {
-    if (
-      focusTarget &&
-      mapRef.current &&
-      isReady &&
-      typeof focusTarget.lat === "number" &&
-      typeof focusTarget.lng === "number" &&
-      !isNaN(focusTarget.lat) &&
-      !isNaN(focusTarget.lng)
-    ) {
-      mapRef.current.flyTo([focusTarget.lat, focusTarget.lng], 17, {
-        duration: 1.2,
-      });
+    try {
+      if (
+        focusTarget &&
+        mapRef.current &&
+        isReady &&
+        typeof focusTarget.lat === "number" &&
+        typeof focusTarget.lng === "number" &&
+        Number.isFinite(focusTarget.lat) &&
+        Number.isFinite(focusTarget.lng) &&
+        focusTarget.lat >= -90 &&
+        focusTarget.lat <= 90 &&
+        focusTarget.lng >= -180 &&
+        focusTarget.lng <= 180
+      ) {
+        mapRef.current.flyTo([focusTarget.lat, focusTarget.lng], 17, {
+          duration: 1.2,
+        });
+      }
+    } catch (_err) {
+      // Prevent unhandled exceptions on flyTo
     }
   }, [focusTarget, isReady]);
 

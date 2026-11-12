@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
+import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { searchIdsWithUnaccent } from "@/lib/search";
 import { supportTicketSchema } from "@/lib/validations/isp";
@@ -253,7 +254,6 @@ export async function saveSupportTicket(
       savedTicket = await prisma.supportTicket.update({
         where: { id: data.id },
         data: {
-          contractId: data.contractId,
           channel: data.channel,
           issueType: data.issueType,
           priority: data.priority,
@@ -366,6 +366,15 @@ export async function deleteSupportTicket(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "tickets:delete")) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado: Los roles operativos no tienen " +
+          "autorización para eliminar tickets del historial.",
+      };
+    }
+
     const existing = await prisma.supportTicket.findUnique({
       where: { id },
     });
@@ -442,6 +451,15 @@ export async function bulkDeleteTickets(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "tickets:delete")) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado: Los roles operativos no tienen " +
+          "autorización para eliminar tickets del historial.",
+      };
     }
 
     if (!ids.length) {

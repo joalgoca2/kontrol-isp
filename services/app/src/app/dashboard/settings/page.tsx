@@ -815,6 +815,7 @@ export default function SettingsPage() {
                   <Input
                     id="currentPassword"
                     type="password"
+                    maxLength={100}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     className="rounded-xl h-10 text-xs"
@@ -830,6 +831,7 @@ export default function SettingsPage() {
                     <Input
                       id="newPassword"
                       type="password"
+                      maxLength={100}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       className="rounded-xl h-10 text-xs"
@@ -844,6 +846,7 @@ export default function SettingsPage() {
                     <Input
                       id="confirmPassword"
                       type="password"
+                      maxLength={100}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       className="rounded-xl h-10 text-xs"
@@ -1457,6 +1460,7 @@ export default function SettingsPage() {
                       </div>
                       <Input
                         id="metaVerifyToken"
+                        maxLength={255}
                         disabled={isGlobalMode || !effectiveBrandId}
                         placeholder={t(
                           "settings.metaWebhookVerifyTokenPlaceholder",
@@ -1484,6 +1488,7 @@ export default function SettingsPage() {
                         <Input
                           id="metaAppSecret"
                           type={showMetaSecret ? "text" : "password"}
+                          maxLength={255}
                           disabled={isGlobalMode || !effectiveBrandId}
                           placeholder={t(
                             "settings.metaAppSecretPlaceholder",
@@ -1556,6 +1561,7 @@ export default function SettingsPage() {
                         </Label>
                         <Input
                           id="evolutionInstance"
+                          maxLength={100}
                           disabled={isGlobalMode || !effectiveBrandId}
                           placeholder="isp_serkoi"
                           value={evolutionInstanceName}
@@ -1578,6 +1584,7 @@ export default function SettingsPage() {
                         </Label>
                         <Input
                           id="evolutionTokenInput"
+                          maxLength={255}
                           disabled={isGlobalMode || !effectiveBrandId}
                           placeholder={t(
                             "settings.evolutionTokenPlaceholder",

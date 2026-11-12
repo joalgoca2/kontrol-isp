@@ -4,12 +4,16 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { searchIdsWithUnaccent } from "@/lib/search";
+import { hasPermission } from "@/lib/permissions";
 import { contractSchema } from "@/lib/validations/isp";
-import { encryptSecret } from "@/lib/crypto";
+import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { grantPaymentPromise } from "@/lib/payments/billing-cycle";
 import {
   getClientPppSession,
   setClientSuspensionOnRouter,
   kickClientSession,
+  getNodeAllSecrets,
+  createPppSecretOnRouter,
 } from "@/lib/mikrotik/node-manager";
 import type {
   ApiResponse,
@@ -17,6 +21,10 @@ import type {
   ContractsPaginatedResponse,
   MikrotikLiveDiagnostic,
   TrafficLightColor,
+  ContractAuditResult,
+  ContractAuditOrphanInCrm,
+  ContractAuditOrphanInRouter,
+  ContractAuditSynced,
 } from "@/types";
 
 export interface GetContractsPaginatedParams {
@@ -29,6 +37,16 @@ export interface GetContractsPaginatedParams {
   technology?: string;
 }
 
+function decryptContractPassword<T extends { pppoePassword?: string | null }>(
+  contract: T
+): T {
+  if (!contract.pppoePassword) return contract;
+  return {
+    ...contract,
+    pppoePassword: decryptSecret(contract.pppoePassword),
+  };
+}
+
 export async function getContractsPaginated(
   params: GetContractsPaginatedParams = {}
 ): Promise<ApiResponse<ContractsPaginatedResponse>> {
@@ -36,6 +54,13 @@ export async function getContractsPaginated(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:read'.",
+      };
     }
 
     const isSuperAdmin = Boolean(
@@ -129,10 +154,12 @@ export async function getContractsPaginated(
 
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
+    const decryptedContracts = contracts.map(decryptContractPassword);
+
     return {
       success: true,
       data: {
-        contracts: contracts as unknown as Contract[],
+        contracts: decryptedContracts as unknown as Contract[],
         total,
         totalPages,
         activeCount,
@@ -170,6 +197,13 @@ export async function getContracts(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:read'.",
+      };
     }
 
     const isSuperAdmin = session.user.roles?.includes("SUPER_ADMIN");
@@ -240,10 +274,12 @@ export async function getContracts(
       }),
     ]);
 
+    const decryptedContracts = contracts.map(decryptContractPassword);
+
     return {
       success: true,
       data: {
-        items: contracts as unknown as Contract[],
+        items: decryptedContracts as unknown as Contract[],
         total,
         totalPages: Math.ceil(total / pageSize) || 1,
         page,
@@ -263,6 +299,13 @@ export async function getContractById(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:read'.",
+      };
     }
 
     const contract = await prisma.contract.findUnique({
@@ -290,7 +333,7 @@ export async function getContractById(
 
     return {
       success: true,
-      data: contract as unknown as Contract,
+      data: decryptContractPassword(contract) as unknown as Contract,
     };
   } catch (err: unknown) {
     const message =
@@ -308,13 +351,32 @@ export async function saveContract(
       return { success: false, error: "No autenticado." };
     }
 
-    const parsed = contractSchema.safeParse(rawInput);
-    if (!parsed.success) {
+    const canManageContract =
+      hasPermission(session.user, "contracts:manage") ||
+      hasPermission(session.user, "billing:manage");
+    if (!canManageContract) {
       return {
         success: false,
         error:
-          parsed.error.issues[0]?.message ||
-          "Datos del contrato no válidos.",
+          "Permiso denegado: Se requiere permiso 'contracts:manage' o " +
+          "'billing:manage'.",
+      };
+    }
+
+    const parsed = contractSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      const fieldName = firstIssue?.path?.[0]
+        ? String(firstIssue.path[0])
+        : "campo";
+      const message =
+        firstIssue?.message || "Datos del contrato no válidos.";
+      const errorText = message.includes(":")
+        ? message
+        : `${fieldName}: ${message}`;
+      return {
+        success: false,
+        error: errorText,
       };
     }
 
@@ -437,7 +499,7 @@ export async function saveContract(
 
     return {
       success: true,
-      data: savedContract as unknown as Contract,
+      data: decryptContractPassword(savedContract) as unknown as Contract,
     };
   } catch (err: unknown) {
     const message =
@@ -453,6 +515,13 @@ export async function runLiveContractDiagnostic(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:read'.",
+      };
     }
 
     const contract = await prisma.contract.findUnique({
@@ -571,6 +640,13 @@ export async function syncContractTelemetry(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "contracts:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:read'.",
+      };
+    }
+
     const actor = session.user.email ?? null;
     const updateData: Record<string, unknown> = {
       updatedBy: actor,
@@ -637,6 +713,18 @@ export async function toggleContractSuspension(
       return { success: false, error: "No autenticado." };
     }
 
+    const canManageSuspension =
+      hasPermission(session.user, "contracts:manage") ||
+      hasPermission(session.user, "billing:manage");
+    if (!canManageSuspension) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado: Se requiere permiso 'contracts:manage' o " +
+          "'billing:manage'.",
+      };
+    }
+
     const contract = await prisma.contract.findUnique({
       where: { id: contractId },
       include: { node: true },
@@ -694,6 +782,13 @@ export async function kickContractSessionAction(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "contracts:read")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:read'.",
+      };
+    }
+
     const contract = await prisma.contract.findUnique({
       where: { id: contractId },
       include: { node: true },
@@ -736,43 +831,35 @@ export async function grantPromiseOfPaymentAction(
       return { success: false, error: "No autenticado." };
     }
 
-    const contract = await prisma.contract.findUnique({
-      where: { id: contractId },
-      include: { node: true, client: true },
-    });
-
-    if (!contract) {
-      return { success: false, error: "Contrato no encontrado." };
+    if (!hasPermission(session.user, "billing:manage")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'billing:manage'.",
+      };
     }
 
-    // 1. Enable client in MikroTik router (/ppp/secret)
-    const routerRes = await setClientSuspensionOnRouter(
-      contract.node,
-      contract.pppoeUser,
-      false
-    );
+    const actor = session.user.email ?? session.user.name ?? "Operador Web";
+    const result = await grantPaymentPromise({
+      contractId,
+      hours,
+      actor,
+    });
 
-    // 2. Kick session to force CPE immediate connection
-    await kickClientSession(contract.node, contract.pppoeUser);
+    revalidatePath("/dashboard/contracts");
+    revalidatePath("/dashboard/billing");
+    revalidatePath("/dashboard/tickets");
 
-    const actor = session.user.email ?? null;
-
-    // 3. Update contract in database to CORTESIA
-    await prisma.contract.update({
-      where: { id: contractId },
-      data: {
-        billingStatus: "CORTESIA",
-        serviceStatus: "ONLINE",
-        updatedBy: actor,
-      },
+    const formattedLimit = result.limitDate.toLocaleString("es-CO", {
+      dateStyle: "medium",
+      timeStyle: "short",
     });
 
     return {
       success: true,
       data: {
         message:
-          `Promesa de pago concedida por ${hours}h exitosamente en ` +
-          `el router: ${routerRes.message}`,
+          `Prórroga de ${result.hours}h concedida exitosamente ` +
+          `hasta ${formattedLimit} (Ticket #${result.ticketNumber}).`,
       },
     };
   } catch (err: unknown) {
@@ -791,6 +878,13 @@ export async function deleteContract(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:delete")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:delete'.",
+      };
     }
 
     const contract = await prisma.contract.findUnique({
@@ -853,6 +947,18 @@ export async function bulkToggleContractsSuspension(
     const session = await auth();
     if (!session?.user?.id) {
       return { success: false, error: "No autenticado." };
+    }
+
+    const canManageSuspension =
+      hasPermission(session.user, "contracts:manage") ||
+      hasPermission(session.user, "billing:manage");
+    if (!canManageSuspension) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado: Se requiere permiso 'contracts:manage' o " +
+          "'billing:manage'.",
+      };
     }
 
     if (!ids || ids.length === 0) {
@@ -935,6 +1041,13 @@ export async function bulkDeleteContracts(
       return { success: false, error: "No autenticado." };
     }
 
+    if (!hasPermission(session.user, "contracts:delete")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:delete'.",
+      };
+    }
+
     if (!ids || ids.length === 0) {
       return { success: false, error: "No se seleccionaron contratos." };
     }
@@ -998,3 +1111,411 @@ export async function bulkDeleteContracts(
     return { success: false, error: message };
   }
 }
+
+function extractSecretBaseName(name: string): {
+  baseName: string;
+  isRetiredInRouter: boolean;
+} {
+  const upper = name.toUpperCase().trim();
+  const retirementPatterns = [
+    /[-_]EQUIPOS?[-_]RETIRADOS?$/i,
+    /[-_]RETIRADOS?$/i,
+    /[-_]CANCELADOS?$/i,
+    /[-_]EQUIPOS?[-_]DEVUELTOS?$/i,
+    /[-_]BAJA$/i,
+  ];
+
+  for (const pattern of retirementPatterns) {
+    if (pattern.test(upper)) {
+      return {
+        baseName: upper.replace(pattern, "").trim(),
+        isRetiredInRouter: true,
+      };
+    }
+  }
+
+  return { baseName: upper, isRetiredInRouter: false };
+}
+
+export async function auditContractsWithRouterAction(
+  nodeId: string
+): Promise<ApiResponse<ContractAuditResult>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:manage")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:manage'.",
+      };
+    }
+
+    if (!nodeId) {
+      return { success: false, error: "Nodo no especificado." };
+    }
+
+    const isSuperAdmin = Boolean(
+      session.user.roles?.includes("SUPER_ADMIN")
+    );
+
+    const node = await prisma.mikrotikNode.findUnique({
+      where: { id: nodeId },
+    });
+
+    if (!node) {
+      return { success: false, error: "Nodo MikroTik no encontrado." };
+    }
+
+    if (!isSuperAdmin && node.brandId !== session.user.brandId) {
+      return { success: false, error: "Acceso denegado a este nodo." };
+    }
+
+    const secretsRes = await getNodeAllSecrets(node);
+    if (!secretsRes.success || !secretsRes.secrets) {
+      return {
+        success: false,
+        error:
+          secretsRes.error ||
+          "No se pudieron obtener las cuentas de MikroTik.",
+      };
+    }
+
+    const routerSecrets = secretsRes.secrets;
+    const secretMap = new Map<string, (typeof routerSecrets)[0]>();
+    const cleanSecretMap = new Map<
+      string,
+      { secret: (typeof routerSecrets)[0]; isRetired: boolean }
+    >();
+    const matchedSecretNames = new Set<string>();
+
+    for (const secret of routerSecrets) {
+      if (secret.name) {
+        const rawKey = secret.name.toLowerCase().trim();
+        secretMap.set(rawKey, secret);
+
+        const clean = extractSecretBaseName(secret.name);
+        cleanSecretMap.set(clean.baseName.toLowerCase().trim(), {
+          secret,
+          isRetired: clean.isRetiredInRouter,
+        });
+      }
+    }
+
+    const contracts = await prisma.contract.findMany({
+      where: {
+        nodeId: node.id,
+        ...(isSuperAdmin
+          ? {}
+          : { brandId: session.user.brandId ?? "none" }),
+      },
+      include: {
+        client: {
+          select: {
+            fullName: true,
+            phonePrimary: true,
+          },
+        },
+        plan: {
+          select: {
+            name: true,
+            mikrotikProfile: true,
+          },
+        },
+      },
+      orderBy: { contractNumber: "asc" },
+    });
+
+    const orphansInCrm: ContractAuditOrphanInCrm[] = [];
+    const synced: ContractAuditSynced[] = [];
+    let totalCrmActive = 0;
+    let detectedRetiredCount = 0;
+
+    for (const contract of contracts) {
+      const isCrmActive = contract.billingStatus !== "RETIRADO";
+      if (isCrmActive) {
+        totalCrmActive++;
+      }
+
+      const clientName = contract.client.fullName;
+      const userKey = contract.pppoeUser?.toLowerCase().trim();
+      const secret = userKey ? secretMap.get(userKey) : undefined;
+      const cleanMatch =
+        !secret && userKey ? cleanSecretMap.get(userKey) : undefined;
+
+      if (secret) {
+        matchedSecretNames.add(userKey);
+        if (isCrmActive) {
+          synced.push({
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            clientName,
+            pppoeUser: contract.pppoeUser,
+            serviceStatus: contract.serviceStatus,
+            disabledInRouter: secret.disabled,
+            profileInRouter: secret.profile,
+          });
+        }
+      } else if (cleanMatch && cleanMatch.isRetired) {
+        matchedSecretNames.add(
+          cleanMatch.secret.name.toLowerCase().trim()
+        );
+        if (isCrmActive) {
+          detectedRetiredCount++;
+          orphansInCrm.push({
+            contractId: contract.id,
+            contractNumber: contract.contractNumber,
+            clientName,
+            clientPhone: contract.client.phonePrimary,
+            pppoeUser: contract.pppoeUser,
+            pppoePassword: contract.pppoePassword,
+            planName: contract.plan?.name ?? null,
+            planProfile: contract.plan?.mikrotikProfile ?? null,
+            serviceStatus: contract.serviceStatus,
+            billingStatus: contract.billingStatus,
+            detectedRetiredInRouter: true,
+            routerSecretName: cleanMatch.secret.name,
+          });
+        }
+      } else if (isCrmActive) {
+        orphansInCrm.push({
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          clientName,
+          clientPhone: contract.client.phonePrimary,
+          pppoeUser: contract.pppoeUser,
+          pppoePassword: contract.pppoePassword,
+          planName: contract.plan?.name ?? null,
+          planProfile: contract.plan?.mikrotikProfile ?? null,
+          serviceStatus: contract.serviceStatus,
+          billingStatus: contract.billingStatus,
+        });
+      }
+    }
+
+    const orphansInRouter: ContractAuditOrphanInRouter[] = [];
+    for (const secret of routerSecrets) {
+      const secretKey = secret.name.toLowerCase().trim();
+      if (!matchedSecretNames.has(secretKey)) {
+        orphansInRouter.push({
+          name: secret.name,
+          profile: secret.profile,
+          disabled: secret.disabled,
+          comment: secret.comment,
+          remoteAddress: secret.remoteAddress,
+          lastLoggedOut: secret.lastLoggedOut,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      data: {
+        nodeId: node.id,
+        nodeName: node.name,
+        totalCrmActive,
+        totalRouterSecrets: routerSecrets.length,
+        syncedCount: synced.length,
+        detectedRetiredCount,
+        orphansInCrm,
+        orphansInRouter,
+        synced,
+      },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al auditar contratos contra MikroTik.";
+    return { success: false, error: message };
+  }
+}
+
+export async function bulkProvisionSecretsAction(
+  contractIds: string[]
+): Promise<
+  ApiResponse<{
+    provisionedCount: number;
+    failedCount: number;
+    errors: string[];
+  }>
+> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    if (!hasPermission(session.user, "contracts:manage")) {
+      return {
+        success: false,
+        error: "Permiso denegado: Se requiere permiso 'contracts:manage'.",
+      };
+    }
+
+    if (!contractIds || contractIds.length === 0) {
+      return {
+        success: false,
+        error: "No se seleccionaron contratos para provisionar.",
+      };
+    }
+
+    const isSuperAdmin = Boolean(
+      session.user.roles?.includes("SUPER_ADMIN")
+    );
+
+    const contracts = await prisma.contract.findMany({
+      where: {
+        id: { in: contractIds },
+        ...(isSuperAdmin
+          ? {}
+          : { brandId: session.user.brandId ?? "none" }),
+      },
+      include: {
+        node: true,
+        plan: true,
+      },
+    });
+
+    let provisionedCount = 0;
+    let failedCount = 0;
+    const errors: string[] = [];
+
+    for (const contract of contracts) {
+      if (!contract.node) {
+        failedCount++;
+        errors.push(
+          `Contrato ${contract.contractNumber}: Nodo no asignado.`
+        );
+        continue;
+      }
+
+      if (!contract.pppoeUser || !contract.pppoeUser.trim()) {
+        failedCount++;
+        errors.push(
+          `Contrato ${contract.contractNumber}: Sin usuario PPPoE.`
+        );
+        continue;
+      }
+
+      const profile =
+        contract.plan?.mikrotikProfile ||
+        contract.plan?.name ||
+        "default";
+      const rawPass = contract.pppoePassword || "123456";
+      const password = decryptSecret(rawPass);
+
+      const res = await createPppSecretOnRouter(contract.node, {
+        name: contract.pppoeUser.trim(),
+        password,
+        profile,
+        comment: `Contrato ${contract.contractNumber}`,
+        remoteAddress: contract.ipAddress ?? undefined,
+      });
+
+      if (res.success) {
+        provisionedCount++;
+        if (contract.serviceStatus === "DESCONOCIDO") {
+          await prisma.contract.update({
+            where: { id: contract.id },
+            data: {
+              serviceStatus: "OFFLINE",
+              updatedBy: session.user.email ?? null,
+            },
+          });
+        }
+      } else {
+        failedCount++;
+        errors.push(
+          `Contrato ${contract.contractNumber} (${contract.pppoeUser}): ${res.message}`
+        );
+      }
+    }
+
+    revalidatePath("/dashboard/contracts");
+
+    return {
+      success: true,
+      data: {
+        provisionedCount,
+        failedCount,
+        errors,
+      },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al provisionar cuentas en lote.";
+    return { success: false, error: message };
+  }
+}
+
+export async function bulkMarkContractsRetiredAction(
+  contractIds: string[]
+): Promise<ApiResponse<{ updatedCount: number }>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    const canRetireContracts =
+      hasPermission(session.user, "contracts:manage") ||
+      hasPermission(session.user, "billing:manage");
+    if (!canRetireContracts) {
+      return {
+        success: false,
+        error:
+          "Permiso denegado: Se requiere permiso 'contracts:manage' o " +
+          "'billing:manage'.",
+      };
+    }
+
+    if (!contractIds || contractIds.length === 0) {
+      return {
+        success: false,
+        error: "No se seleccionaron contratos para retirar.",
+      };
+    }
+
+    const isSuperAdmin = Boolean(
+      session.user.roles?.includes("SUPER_ADMIN")
+    );
+    const actor = session.user.email ?? null;
+
+    const whereClause: Record<string, unknown> = {
+      id: { in: contractIds },
+    };
+    if (!isSuperAdmin) {
+      whereClause.brandId = session.user.brandId ?? "none";
+    }
+
+    const updateResult = await prisma.contract.updateMany({
+      where: whereClause,
+      data: {
+        billingStatus: "RETIRADO",
+        serviceStatus: "OFFLINE",
+        updatedBy: actor,
+      },
+    });
+
+    revalidatePath("/dashboard/contracts");
+
+    return {
+      success: true,
+      data: {
+        updatedCount: updateResult.count,
+      },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Error al marcar contratos como retirados.";
+    return { success: false, error: message };
+  }
+}
+

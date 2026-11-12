@@ -4,6 +4,7 @@ import type {
   MikrotikNode,
   MikrotikActiveSession,
   MikrotikLiveDiagnostic,
+  MikrotikSecret,
 } from "@/types";
 
 export interface NodeHealthResult {
@@ -344,6 +345,86 @@ export async function setClientSuspensionOnRouter(
       message: suspend
         ? `Abonado '${pppoeUser}' suspendido en MikroTik.`
         : `Abonado '${pppoeUser}' reactivado en MikroTik.`,
+    };
+  }
+
+  return {
+    success: false,
+    message: formatMikrotikError(res.error),
+  };
+}
+
+export async function getNodeAllSecrets(
+  node: MikrotikNode
+): Promise<{ success: boolean; secrets?: MikrotikSecret[]; error?: string }> {
+  const res = await executeOnNode(node, async (client) => {
+    const queryRes = await client.executeSentence(["/ppp/secret/print"]);
+    if (queryRes.trap) {
+      throw new Error(queryRes.error || "failed to fetch secrets");
+    }
+    return queryRes.sentences.map((s) => ({
+      id: s[".id"] ?? "",
+      name: s.name ?? "",
+      service: s.service,
+      profile: s.profile,
+      disabled: s.disabled === "true",
+      comment: s.comment,
+      remoteAddress: s["remote-address"],
+      lastCallerId: s["last-caller-id"],
+      lastLoggedOut:
+        s["last-logged-out"] && s["last-logged-out"] !== "1970-01-01 00:00:00"
+          ? s["last-logged-out"]
+          : undefined,
+      lastDisconnectReason: s["last-disconnect-reason"],
+    }));
+  });
+
+  if (res.success && res.data) {
+    return { success: true, secrets: res.data };
+  }
+  return { success: false, error: formatMikrotikError(res.error) };
+}
+
+export async function createPppSecretOnRouter(
+  node: MikrotikNode,
+  data: {
+    name: string;
+    password?: string;
+    profile?: string;
+    comment?: string;
+    remoteAddress?: string;
+  }
+): Promise<{ success: boolean; message: string }> {
+  const sentence = [
+    "/ppp/secret/add",
+    `=name=${data.name}`,
+    `=service=pppoe`,
+  ];
+  if (data.password) {
+    sentence.push(`=password=${data.password}`);
+  }
+  if (data.profile) {
+    sentence.push(`=profile=${data.profile}`);
+  }
+  if (data.comment) {
+    sentence.push(`=comment=${data.comment}`);
+  }
+  if (data.remoteAddress) {
+    sentence.push(`=remote-address=${data.remoteAddress}`);
+  }
+
+  const res = await executeOnNode(node, async (client) => {
+    const addRes = await client.executeSentence(sentence);
+    if (addRes.trap) {
+      throw new Error(addRes.error || "failed to add secret");
+    }
+    return true;
+  });
+
+  if (res.success) {
+    return {
+      success: true,
+      message: `Cuenta PPPoE '${data.name}' creada exitosamente en MikroTik.`,
     };
   }
 

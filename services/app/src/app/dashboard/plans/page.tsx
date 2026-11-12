@@ -995,6 +995,7 @@ function PlansTableContent() {
               </Label>
               <Input
                 required
+                maxLength={80}
                 placeholder="ej. 50M Fibra Óptica Residencial"
                 value={editingPlan?.name || ""}
                 onChange={(e) =>
@@ -1123,6 +1124,7 @@ function PlansTableContent() {
                   {t("plans.labelMikrotikProfile", "Perfil RouterOS")}
                 </Label>
                 <Input
+                  maxLength={50}
                   placeholder="ej. profile-50m-res"
                   value={editingPlan?.mikrotikProfile || ""}
                   onChange={(e) =>

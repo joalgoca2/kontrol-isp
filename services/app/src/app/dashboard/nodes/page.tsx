@@ -15,6 +15,7 @@ import {
   Unlink,
   List,
   LayoutGrid,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "@/components/providers/i18n-provider";
@@ -72,6 +73,7 @@ import {
   type ActionDropdownItem,
 } from "@/components/ui/actions-dropdown";
 import { BulkActionsBar } from "@/components/ui/bulk-actions-bar";
+import { NodeBroadcastModal } from "@/components/nodes/node-broadcast-modal";
 import { cn } from "@/lib/utils";
 
 function NodesTableContent() {
@@ -116,6 +118,15 @@ function NodesTableContent() {
   // Delete Confirmation State (Premium AlertDialog)
   const [deletingNodeId, setDeletingNodeId] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
+
+  // Broadcast WhatsApp Incident Modal State
+  const [broadcastNode, setBroadcastNode] = useState<MikrotikNode | null>(null);
+  const [isBroadcastOpen, setIsBroadcastOpen] = useState<boolean>(false);
+
+  const handleOpenBroadcast = (node: MikrotikNode) => {
+    setBroadcastNode(node);
+    setIsBroadcastOpen(true);
+  };
 
   const updateUrlParams = useCallback(
     (updates: {
@@ -972,6 +983,17 @@ function NodesTableContent() {
                       onClick: () => handleOpenEdit(node),
                     },
                     {
+                      label: t(
+                        "nodes.actionBroadcast",
+                        "Notificar Incidencia (WhatsApp)"
+                      ),
+                      icon: MessageSquare,
+                      variant: "emerald" as const,
+                      onClick: () =>
+                        handleOpenBroadcast(node as unknown as MikrotikNode),
+                      disabled: contractsCount === 0,
+                    },
+                    {
                       label: node.isActive
                         ? t("nodes.actionDeactivate", "Desactivar Nodo")
                         : t("nodes.actionActivate", "Activar Nodo"),
@@ -1246,6 +1268,17 @@ function NodesTableContent() {
                     onClick: () => handleOpenEdit(node),
                   },
                   {
+                    label: t(
+                      "nodes.actionBroadcast",
+                      "Notificar Incidencia (WhatsApp)"
+                    ),
+                    icon: MessageSquare,
+                    variant: "emerald" as const,
+                    onClick: () =>
+                      handleOpenBroadcast(node as unknown as MikrotikNode),
+                    disabled: contractsCount === 0,
+                  },
+                  {
                     label: node.isActive
                       ? t("nodes.actionDeactivate", "Desactivar Nodo")
                       : t("nodes.actionActivate", "Activar Nodo"),
@@ -1482,6 +1515,7 @@ function NodesTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={30}
                   placeholder="ej. NOD-SOA-01"
                   value={editingNode?.code || ""}
                   onChange={(e) =>
@@ -1500,6 +1534,7 @@ function NodesTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={100}
                   placeholder="ej. CCR1009 Soacha"
                   value={editingNode?.name || ""}
                   onChange={(e) =>
@@ -1516,6 +1551,7 @@ function NodesTableContent() {
               </Label>
               <Input
                 required
+                maxLength={150}
                 placeholder="ej. Soacha Centro (Cra 5 # 12-30)"
                 value={editingNode?.location || ""}
                 onChange={(e) =>
@@ -1532,6 +1568,7 @@ function NodesTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={100}
                   placeholder="ej. 190.242.115.10"
                   value={editingNode?.host || ""}
                   onChange={(e) =>
@@ -1564,6 +1601,7 @@ function NodesTableContent() {
                 {t("nodes.labelFallbackHost", "IP Fallback LAN (Opcional)")}
               </Label>
               <Input
+                maxLength={100}
                 placeholder="ej. 192.168.21.1 (si falla la IP pública)"
                 value={editingNode?.fallbackHost || ""}
                 onChange={(e) =>
@@ -1583,6 +1621,7 @@ function NodesTableContent() {
                 </Label>
                 <Input
                   required
+                  maxLength={60}
                   placeholder="ej. api_kontrol"
                   value={editingNode?.username || ""}
                   onChange={(e) =>
@@ -1601,6 +1640,7 @@ function NodesTableContent() {
                 </Label>
                 <Input
                   type="password"
+                  maxLength={100}
                   placeholder={
                     editingNode?.id
                       ? "•••••••• (sin cambios)"
@@ -1705,6 +1745,13 @@ function NodesTableContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Incident WhatsApp Broadcast Modal */}
+      <NodeBroadcastModal
+        node={broadcastNode}
+        open={isBroadcastOpen}
+        onOpenChange={setIsBroadcastOpen}
+      />
     </div>
   );
 }

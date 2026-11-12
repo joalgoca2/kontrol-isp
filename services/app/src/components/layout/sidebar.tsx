@@ -80,20 +80,14 @@ const navCategories: NavCategory[] = [
         defaultTitle: "Nodos MikroTik",
         href: "/dashboard/nodes",
         icon: Server,
-        allowedRoles: ["SUPER_ADMIN", "ADMIN", "TECHNICIAN"],
+        allowedRoles: ["SUPER_ADMIN", "ADMIN"],
       },
       {
         key: "nav.plans",
         defaultTitle: "Planes de Internet",
         href: "/dashboard/plans",
         icon: Gauge,
-        allowedRoles: [
-          "SUPER_ADMIN",
-          "ADMIN",
-          "BILLING",
-          "SUPPORT",
-          "TECHNICIAN",
-        ],
+        allowedRoles: ["SUPER_ADMIN", "ADMIN", "BILLING"],
       },
       {
         key: "nav.networkMap",
@@ -162,7 +156,13 @@ const navCategories: NavCategory[] = [
         defaultTitle: "Mesa de Ayuda & IA",
         href: "/dashboard/tickets",
         icon: Headphones,
-        allowedRoles: ["SUPER_ADMIN", "ADMIN", "TECHNICIAN", "SUPPORT"],
+        allowedRoles: [
+          "SUPER_ADMIN",
+          "ADMIN",
+          "BILLING",
+          "TECHNICIAN",
+          "SUPPORT",
+        ],
       },
       {
         key: "nav.whatsappChat",

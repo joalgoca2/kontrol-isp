@@ -73,12 +73,24 @@ async function main() {
     { name: "nodes:manage", description: "Administrar nodos MikroTik" },
     { name: "nodes:read", description: "Ver estado y telemetría de nodos" },
     { name: "clients:manage", description: "Crear y editar titulares/clientes" },
+    {
+      name: "clients:delete",
+      description: "Eliminar titulares de la base de datos",
+    },
     { name: "clients:read", description: "Ver clientes" },
     { name: "contracts:manage", description: "Gestionar contratos y cortes" },
+    {
+      name: "contracts:delete",
+      description: "Eliminar contratos del sistema",
+    },
     { name: "contracts:read", description: "Consultar contratos" },
     { name: "plans:manage", description: "Configurar planes y tarifas" },
     { name: "billing:manage", description: "Registrar cobros y emitir recibos" },
     { name: "tickets:manage", description: "Gestionar tickets y visitas técnicas" },
+    {
+      name: "tickets:delete",
+      description: "Eliminar tickets de soporte del historial de auditoría",
+    },
     { name: "users:manage", description: "Gestionar usuarios y credenciales" },
     { name: "settings:manage", description: "Configuración del sistema" },
   ];
@@ -95,6 +107,8 @@ async function main() {
     "clients:read",
     "clients:manage",
     "contracts:read",
+    "contracts:manage",
+    "tickets:manage",
     "plans:manage",
   ];
 

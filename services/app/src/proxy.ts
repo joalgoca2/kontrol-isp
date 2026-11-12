@@ -8,6 +8,8 @@ const scriptSrc =
   `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ""}` +
   `https://static.cloudflareinsights.com ` +
   `https://unpkg.com ` +
+  `https://checkout.epayco.co ` +
+  `https://*.epayco.co ` +
   `https://maps.googleapis.com;`;
 
 const styleSrc =
@@ -19,6 +21,8 @@ const imgSrc =
   `img-src 'self' blob: data: ` +
   `https://*.tile.openstreetmap.org ` +
   `https://maps.gstatic.com ` +
+  `https://*.epayco.co ` +
+  `https://*.epayco.io ` +
   `https://maps.googleapis.com;`;
 
 const connectSrc =
@@ -27,13 +31,19 @@ const connectSrc =
   `https://unpkg.com ` +
   `https://*.tile.openstreetmap.org ` +
   `https://nominatim.openstreetmap.org ` +
+  `https://*.epayco.co ` +
+  `https://*.epayco.io ` +
   `https://maps.googleapis.com;`;
 
 const fontSrc = `font-src 'self' data: https://fonts.gstatic.com;`;
 
+const frameSrc =
+  `frame-src 'self' https://*.epayco.co https://*.epayco.io ` +
+  `https://checkout.epayco.co;`;
+
 const cspHeader =
   `default-src 'self'; ${scriptSrc} ${styleSrc} ${imgSrc} ${connectSrc} ` +
-  `${fontSrc} object-src 'none'; base-uri 'self'; form-action 'self'; ` +
+  `${fontSrc} ${frameSrc} object-src 'none'; base-uri 'self'; form-action 'self'; ` +
   `frame-ancestors 'none'; upgrade-insecure-requests;`;
 
 function applySecurityHeaders(res: NextResponse): NextResponse {

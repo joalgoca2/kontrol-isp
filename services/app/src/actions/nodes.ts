@@ -6,6 +6,10 @@ import { searchIdsWithUnaccent } from "@/lib/search";
 import { mikrotikNodeSchema } from "@/lib/validations/isp";
 import { testNodeHealth } from "@/lib/mikrotik/node-manager";
 import { encryptSecret } from "@/lib/crypto";
+import {
+  sendWhatsappTextMessage,
+  validateAndFormatPhone,
+} from "@/lib/evolution-api";
 import type {
   ApiResponse,
   MikrotikNode,
@@ -625,6 +629,183 @@ export async function bulkDeleteMikrotikNodes(
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : "Error al eliminar nodos en lote.";
+    return { success: false, error: message };
+  }
+}
+
+export type BroadcastAudience = "ALL" | "ACTIVE" | "OFFLINE";
+
+export interface NodeBroadcastRecipient {
+  contractId: string;
+  contractNumber: string;
+  clientName: string;
+  phone: string;
+  pppoeUser: string;
+  serviceStatus: string;
+  billingStatus: string;
+}
+
+export interface NodeBroadcastData {
+  nodeId: string;
+  nodeName: string;
+  nodeCode: string;
+  brandName: string;
+  totalContractsOnNode: number;
+  validRecipients: NodeBroadcastRecipient[];
+  skippedNoPppoeCount: number;
+  skippedInvalidPhoneCount: number;
+  skippedDuplicatePhoneCount: number;
+}
+
+export async function getNodeBroadcastRecipientsAction(
+  nodeId: string,
+  audience: BroadcastAudience = "ALL"
+): Promise<ApiResponse<NodeBroadcastData>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    const userRoles = session.user.roles ?? [];
+    const canBroadcast = userRoles.some((r) =>
+      ["SUPER_ADMIN", "ADMIN", "TECHNICIAN"].includes(r)
+    );
+    if (!canBroadcast) {
+      return {
+        success: false,
+        error: "Acceso denegado: rol insuficiente para emitir avisos.",
+      };
+    }
+
+    const node = await prisma.mikrotikNode.findUnique({
+      where: { id: nodeId },
+      include: { brand: true },
+    });
+
+    if (!node) {
+      return { success: false, error: "Nodo no encontrado." };
+    }
+
+    const totalContractsOnNode = await prisma.contract.count({
+      where: { nodeId },
+    });
+
+    const whereClause: Record<string, unknown> = { nodeId };
+    if (audience === "ACTIVE") {
+      whereClause.billingStatus = "ACTIVO";
+    } else if (audience === "OFFLINE") {
+      whereClause.serviceStatus = "OFFLINE";
+    }
+
+    const contracts = await prisma.contract.findMany({
+      where: whereClause,
+      include: {
+        client: true,
+      },
+      orderBy: { contractNumber: "asc" },
+    });
+
+    const validRecipients: NodeBroadcastRecipient[] = [];
+    const seenPhones = new Set<string>();
+    let skippedNoPppoeCount = 0;
+    let skippedInvalidPhoneCount = 0;
+    let skippedDuplicatePhoneCount = 0;
+
+    for (const c of contracts) {
+      // Security Filter 1: Must have a registered PPPoE user
+      if (!c.pppoeUser || !c.pppoeUser.trim()) {
+        skippedNoPppoeCount++;
+        continue;
+      }
+
+      // Security Filter 2: Must have client and valid primary phone
+      const rawPhone = c.client?.phonePrimary;
+      if (!rawPhone || !rawPhone.trim()) {
+        skippedInvalidPhoneCount++;
+        continue;
+      }
+
+      const phoneVal = validateAndFormatPhone(rawPhone);
+      if (!phoneVal.isValid) {
+        skippedInvalidPhoneCount++;
+        continue;
+      }
+
+      // Security Filter 3: Deduplicate by phone
+      if (seenPhones.has(phoneVal.phone)) {
+        skippedDuplicatePhoneCount++;
+        continue;
+      }
+
+      seenPhones.add(phoneVal.phone);
+      validRecipients.push({
+        contractId: c.id,
+        contractNumber: c.contractNumber,
+        clientName: c.client?.fullName || "Abonado",
+        phone: phoneVal.phone,
+        pppoeUser: c.pppoeUser,
+        serviceStatus: c.serviceStatus,
+        billingStatus: c.billingStatus,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        nodeId: node.id,
+        nodeName: node.name,
+        nodeCode: node.code,
+        brandName: node.brand?.name || "Serkoi",
+        totalContractsOnNode,
+        validRecipients,
+        skippedNoPppoeCount,
+        skippedInvalidPhoneCount,
+        skippedDuplicatePhoneCount,
+      },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Error al consultar destinatarios.";
+    return { success: false, error: message };
+  }
+}
+
+export interface SendSingleBroadcastParams {
+  recipientPhone: string;
+  message: string;
+  instanceName?: string;
+}
+
+export async function sendSingleBroadcastMessageAction(
+  params: SendSingleBroadcastParams
+): Promise<ApiResponse<{ messageId?: string }>> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return { success: false, error: "No autenticado." };
+    }
+
+    const res = await sendWhatsappTextMessage(
+      params.recipientPhone,
+      params.message,
+      params.instanceName
+    );
+
+    if (!res.success) {
+      return {
+        success: false,
+        error: res.error || "No se pudo entregar el mensaje por WhatsApp.",
+      };
+    }
+
+    return {
+      success: true,
+      data: { messageId: res.messageId },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Error al despachar mensaje.";
     return { success: false, error: message };
   }
 }
